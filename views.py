@@ -10,7 +10,6 @@ def proxy_view(request, service, path=''):
     print(f"Proxying to: {url}")
     
     try:
-        # Prepare cookies
         cookies = {}
         for key, value in request.COOKIES.items():
             cookies[key] = value
@@ -34,11 +33,14 @@ def proxy_view(request, service, path=''):
         
         content_type = resp.headers.get('content-type', '')
         
-        # For HTML, rewrite paths
-        if 'text/html' in content_type:
+        # Rewrite HTML and JavaScript
+        if 'text/html' in content_type or 'javascript' in content_type:
             content = resp.content.decode('utf-8', errors='ignore')
+            # Rewrite HTML attributes
             content = re.sub(r'(href|src|action)="(/[^"]*)"', rf'\1="/{service}\2"', content)
             content = re.sub(r"(href|src|action)='(/[^']*)'", rf"\1='/{service}\2'", content)
+            # Rewrite JavaScript fetch/ajax calls - look for quotes around URLs
+            content = re.sub(r'(["\'])(/[a-zA-Z][^"\']*)', rf'\1/{service}\2', content)
             response = HttpResponse(content, status=resp.status_code)
         else:
             response = HttpResponse(resp.content, status=resp.status_code)
@@ -53,12 +55,10 @@ def proxy_view(request, service, path=''):
                         value = value.replace(f'https://{service}.up.railway.app/', f'/{service}/')
                 response[key] = value
         
-        # Handle Set-Cookie separately to properly rewrite each cookie
+        # Handle Set-Cookie
         if 'Set-Cookie' in resp.headers:
             for cookie in resp.raw.headers.getlist('Set-Cookie'):
-                # Remove domain restrictions so cookie works on proxy domain
                 cookie = re.sub(r';\s*Domain=[^;]+', '', cookie, flags=re.IGNORECASE)
-                # Change path to include service prefix
                 cookie = re.sub(r'(Path=)(/[^;]*)', rf'\1/{service}\2', cookie, flags=re.IGNORECASE)
                 response['Set-Cookie'] = cookie
         
