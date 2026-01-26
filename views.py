@@ -29,13 +29,17 @@ def proxy_view(request, service, path=''):
         # Copy headers
         for key, value in resp.headers.items():
             if key.lower() not in ['connection', 'transfer-encoding']:
+                # In the Location header rewriting part, replace with:
                 if key.lower() == 'location':
                     # Rewrite redirects
                     if value.startswith('/'):
                         value = f'/{service}{value}'
-                    elif value.startswith(f'https://{service}.up.railway.app'):
-                        value = value.replace(f'https://{service}.up.railway.app', f'/{service}')
-                response[key] = value
+                    elif value.startswith(f'https://{service}.up.railway.app/'):
+                        value = value.replace(f'https://{service}.up.railway.app/', f'/{service}/')
+                    elif f'{service}.up.railway.app' in value:
+                        # Catch any other absolute URLs from the service
+                        value = value.replace(f'{service}.up.railway.app', request.get_host())
+                        value = value.replace(f'https://{request.get_host()}/', f'http://{request.get_host()}/{service}/')
         
         return response
         
