@@ -36,14 +36,14 @@ def proxy_view(request, service, path=''):
         # Rewrite HTML
         # Rewrite HTML
         # Rewrite HTML
+        # Rewrite HTML
         if 'text/html' in content_type:
             content = resp.content.decode('utf-8', errors='ignore')
-            # Rewrite HTML attributes
+            # Rewrite HTML attributes (href, src, action)
             content = re.sub(r'(href|src|action)="(/[^"]*)"', rf'\1="/{service}\2"', content)
             content = re.sub(r"(href|src|action)='(/[^']*)'", rf"\1='/{service}\2'", content)
-            # Rewrite JavaScript fetch calls - but NOT /static/ paths
-            # Negative lookahead (?!static) ensures we don't match /static/
-            content = re.sub(r'''(['"`])(\/(?!static)[a-zA-Z0-9_\-/]+\/?)''', rf'\1/{service}\2', content)
+            # ONLY rewrite fetch() calls - nothing else
+            content = re.sub(r'fetch\s*\(\s*["\'](/[^"\']+)', rf'fetch("/{service}\1', content)
             response = HttpResponse(content, status=resp.status_code)
         elif 'javascript' in content_type:
             content = resp.content.decode('utf-8', errors='ignore')
