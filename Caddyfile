@@ -1,7 +1,11 @@
 :{$PORT}
 
 handle_path /{app}/* {
-    reverse_proxy https://{app}.up.railway.app
+    reverse_proxy {app}.up.railway.app:443 {
+        transport http {
+            tls
+        }
+    }
 }
 
 handle {
