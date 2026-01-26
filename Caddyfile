@@ -1,3 +1,0 @@
-:{$PORT}
-
-reverse_proxy /dash0/* https://dash0.up.railway.app
