@@ -1,7 +1,7 @@
 :{$PORT}
 
 @app {
-    path_regexp app ^/([^/]+)/
+    path_regexp app ^/([^/]+)(/.*)?$
 }
 
 handle @app {
