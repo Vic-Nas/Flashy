@@ -49,13 +49,29 @@ def proxy_view(request, service, path=''):
     print(f"[PROXY] {request.method} /{service}/{path} → {url}")
     
     try:
-        # Prepare request headers - include ALL headers except connection and host
+        # Prepare request headers
         headers = {}
         for k, v in request.headers.items():
             if k.lower() not in ['connection', 'host']:
                 headers[k] = v
         
-        # Override/add specific headers
+        # Rewrite Referer header to point to backend
+        if 'Referer' in headers:
+            referer = headers['Referer']
+            # Replace proxy domain with backend domain and remove service prefix
+            # https://vicnas.me/dash0/path -> https://dash0.up.railway.app/path
+            referer = re.sub(
+                rf'https?://[^/]+/{service}/',
+                f'https://{target_domain}/',
+                referer
+            )
+            headers['Referer'] = referer
+        
+        # Rewrite Origin header to point to backend
+        if 'Origin' in headers:
+            headers['Origin'] = f'https://{target_domain}'
+        
+        # Set required headers
         headers['Host'] = target_domain
         headers['X-Forwarded-Host'] = request.get_host()
         headers['X-Forwarded-Proto'] = 'https' if request.is_secure() else 'http'
