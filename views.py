@@ -1,10 +1,16 @@
 from django.http import HttpResponse, StreamingHttpResponse
 from django.views.decorators.csrf import csrf_exempt
 import requests
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 @csrf_exempt
 def proxy_view(request, service, path=''):
     # Build target URL
+    logger.info(f"Proxying: /{service}/{path}")
+    print(f"Proxying to: https://{service}.up.railway.app/{path}")
     url = f"https://{service}.up.railway.app/{path}"
     
     # Forward request
