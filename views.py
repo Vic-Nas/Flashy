@@ -93,7 +93,20 @@ def proxy_view(request, service, path=''):
         content_type = resp.headers.get('content-type', '')
         
         # Rewrite content based on type
-        if 'text/html' in content_type:
+        if 'application/json' in content_type:
+            # Rewrite JSON responses containing URLs
+            try:
+                content = resp.content.decode('utf-8', errors='ignore')
+                print(f"[JSON] Original response: {content}")
+                data = json.loads(content)
+                data = rewrite_json_urls(data, service)
+                print(f"[JSON] Rewritten response: {json.dumps(data)}")
+                response = JsonResponse(data, status=resp.status_code, safe=False)
+            except (json.JSONDecodeError, Exception) as e:
+                print(f"[JSON] Error rewriting: {e}")
+                # If JSON parsing fails, pass through as-is
+                response = HttpResponse(resp.content, status=resp.status_code, content_type=content_type)
+        elif 'text/html' in content_type:
             content = resp.content.decode('utf-8', errors='ignore')
             content = rewrite_html(content, service)
             response = HttpResponse(content, status=resp.status_code)
@@ -105,16 +118,6 @@ def proxy_view(request, service, path=''):
             content = resp.content.decode('utf-8', errors='ignore')
             content = rewrite_css(content, service)
             response = HttpResponse(content, status=resp.status_code)
-        elif 'application/json' in content_type:
-            # Rewrite JSON responses containing URLs
-            try:
-                content = resp.content.decode('utf-8', errors='ignore')
-                data = json.loads(content)
-                data = rewrite_json_urls(data, service)
-                response = JsonResponse(data, status=resp.status_code, safe=False)
-            except (json.JSONDecodeError, Exception):
-                # If JSON parsing fails, pass through as-is
-                response = HttpResponse(resp.content, status=resp.status_code, content_type=content_type)
         else:
             response = HttpResponse(resp.content, status=resp.status_code)
         
