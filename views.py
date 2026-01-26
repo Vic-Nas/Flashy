@@ -12,8 +12,13 @@ def proxy_view(request, service, path=''):
         resp = requests.request(
             method=request.method,
             url=url,
-            headers={k: v for k, v in request.headers.items() 
-                    if k.lower() not in ['host', 'connection']},
+            headers={
+                **{k: v for k, v in request.headers.items() 
+                if k.lower() not in ['connection']},
+                'Host': f'{service}.up.railway.app',  # Keep original host
+                'X-Forwarded-Host': request.get_host(),
+                'X-Forwarded-Proto': 'https' if request.is_secure() else 'http',
+            },
             data=request.body,
             cookies=request.COOKIES,
             allow_redirects=False,
