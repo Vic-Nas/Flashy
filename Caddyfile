@@ -1,8 +1,6 @@
 :{$PORT}
 
-@app {
-    path_regexp app ^/([^/]+)(/.*)?$
-}
+@app path_regexp ^/([^/]+)(/.*)?$
 
 handle @app {
     uri strip_prefix /{re.app.1}
