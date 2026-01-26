@@ -1,0 +1,4 @@
+:{$PORT}
+
+reverse_proxy /app/* https://app.up.railway.app
+reverse_proxy /dash/* https://dash.up.railway.app
