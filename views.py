@@ -47,7 +47,9 @@ def proxy_view(request, service, path=''):
     if request.META.get('QUERY_STRING'):
         url += f"?{request.META['QUERY_STRING']}"
     
-    print(f"[PROXY] {request.method} /{service}/{path} → {url}")
+    # Only log non-static requests
+    if not path.startswith('static/') and not path.endswith('.svg') and not path.endswith('.ico'):
+        print(f"[PROXY] {request.method} /{service}/{path}")
     
     try:
         # Prepare request headers
@@ -97,14 +99,10 @@ def proxy_view(request, service, path=''):
             # Rewrite JSON responses containing URLs
             try:
                 content = resp.content.decode('utf-8', errors='ignore')
-                print(f"[JSON] Original response: {content}")
                 data = json.loads(content)
                 data = rewrite_json_urls(data, service)
-                print(f"[JSON] Rewritten response: {json.dumps(data)}")
                 response = JsonResponse(data, status=resp.status_code, safe=False)
-            except (json.JSONDecodeError, Exception) as e:
-                print(f"[JSON] Error rewriting: {e}")
-                # If JSON parsing fails, pass through as-is
+            except (json.JSONDecodeError, Exception):
                 response = HttpResponse(resp.content, status=resp.status_code, content_type=content_type)
         elif 'text/html' in content_type:
             content = resp.content.decode('utf-8', errors='ignore')
@@ -169,8 +167,15 @@ def rewrite_html(content, service):
     # Rewrite href, src, action attributes with single quotes
     content = re.sub(r"(href|src|action)='(/[^']+)'", rf"\1='/{service}\2'", content)
     
-    # Rewrite fetch() calls in inline scripts - proper quote matching
+    # Rewrite fetch() calls in inline scripts
     content = re.sub(r'fetch\s*\(\s*(["\'])(/[^"\']+)\1', rf'fetch(\1/{service}\2\1', content)
+    
+    # Rewrite template literals - match `/path` at start of template literal
+    # This handles: `/${var}` or `/path/${var}` or `/path/fixed`
+    content = re.sub(r'`(\/[^`]*?)`', lambda m: f'`/{service}{m.group(1)}`', content)
+    
+    # Rewrite window.location with template literals
+    content = re.sub(r'(window\.location(?:\.href)?\s*=\s*)`(\/[^`]+)`', rf'\1`/{service}\2`', content)
     
     return content
 
@@ -186,9 +191,15 @@ def rewrite_javascript(content, service):
     # Rewrite url: property with proper quote matching
     content = re.sub(r'(url:\s*)(["\'])(/[^"\']+)\2', rf'\1\2/{service}\3\2', content)
     
-    # Rewrite window.location assignments
+    # Rewrite window.location assignments with quotes
     content = re.sub(r'(window\.location\s*=\s*)(["\'])(/[^"\']+)\2', rf'\1\2/{service}\3\2', content)
     content = re.sub(r'(window\.location\.href\s*=\s*)(["\'])(/[^"\']+)\2', rf'\1\2/{service}\3\2', content)
+    
+    # Rewrite template literals - match `/path` at start of template literal
+    content = re.sub(r'`(\/[^`]*?)`', lambda m: f'`/{service}{m.group(1)}`', content)
+    
+    # Rewrite window.location with template literals
+    content = re.sub(r'(window\.location(?:\.href)?\s*=\s*)`(\/[^`]+)`', rf'\1`/{service}\2`', content)
     
     return content
 
