@@ -1,33 +1,60 @@
 # Path-Based Reverse Proxy
 
-Simple reverse proxy using URL paths instead of subdomains.
+Route multiple services through a single domain using URL paths instead of subdomains.
 
-## Quick Setup
+## Why Use This?
 
-1. **Create `.env` file:**
-   ```bash
-   SERVICE_api=api.up.railway.app
-   SERVICE_calculum=calculum.up.railway.app
-   
-   SECRET_KEY=your-secret-key
-   DEBUG=False
-   ALLOWED_HOSTS=vicnas.me
-   ```
+✨ **Single DNS record** - One domain, many services  
+🚀 **Simple routing** - Path-based instead of subdomain-based  
+🛡️ **Centralized proxy** - Manage all traffic in one place  
+🎯 **Works anywhere** - Railway, VPS, Docker, anywhere Django runs
 
-2. [**Deploy to Railway**](https://railway.com?referralCode=ZIdvo-)
+## 🎬 Demo
 
-3. **Add custom domain** in Railway settings
+**Live at https://vicnas.me** - See it in action!
+- Visit the home page to see available services
+- Access any service via `/service-name/`
 
-4. **Update DNS** with Railway's records
+## Quick Start
+
+### 1. Environment Setup
+
+Create a `.env` file with your services:
+
+```bash
+SERVICE_api=api.example.com
+SERVICE_app=myapp.example.com
+
+SECRET_KEY=your-secret-key
+DEBUG=False
+ALLOWED_HOSTS=yourdomain.com
+```
+
+### 2. Deploy
+
+**Easiest:** [Deploy to Railway](https://railway.com?referralCode=ZIdvo-) (includes free credits)
+
+Or deploy anywhere Django runs (Docker, VPS, etc.)
+
+### 3. Point DNS
+
+One DNS record to your proxy:
+```
+yourdomain.com → your-proxy-server
+```
+
+Done! ✓
 
 ## Usage
 
-`/{service}/` routes to the domain configured in your `.env`
+Access your services via paths:
+- `https://yourdomain.com/app/settings` → `https://myapp.example.com/settings`
 
-<!-- Examples:
-- `https://vicnas.me/dash0/` → `https://dash0.up.railway.app/`
-- `https://vicnas.me/api/users` → `https://api.up.railway.app/users` -->
+Unknown services show a friendly "not found" page.
 
-## Limitations
+## Notes
 
-- **No WebSocket support** - needs Nginx/Caddy
+- Each service is defined via `SERVICE_name=domain` env variables
+- Content is automatically rewritten to work behind the proxy
+- Supports HTML, JSON, CSS, JavaScript
+- WebSockets are not supported
