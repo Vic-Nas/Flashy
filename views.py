@@ -233,49 +233,67 @@ def rewrite_content(content, service):
     """Rewrite URLs in content to include service prefix.
     
     Only rewrite relative navigation paths and assets.
-    Do NOT rewrite API calls to external services or absolute URLs.
+    Do NOT rewrite API calls or external services.
     """
     
-    # Don't rewrite paths that are clearly external APIs or absolute URLs
-    # List of API patterns that should NOT be rewritten
+    # Don't rewrite paths that look like API endpoints or external services
+    # These patterns match common API path structures
     api_patterns = [
-        r'api\.github\.com',
-        r'github\.com/api',
-        r'://api\.',
-        r'://[a-z0-9-]+\.api\.',
+        r'/api/',           # /api/v1/users
+        r'/v\d+/',          # /v1/users, /v2/data
+        r'/rest/',          # /rest/api/users
+        r'://[^/]+\.api\.',  # api.service.com
+        r'://api\.',         # api.example.com
     ]
     
-    # Helper to check if a path is an external API call
-    def should_not_rewrite(match):
-        text = match.group(0)
+    def should_not_rewrite(text):
+        """Check if a path is an API endpoint that shouldn't be rewritten."""
         for pattern in api_patterns:
             if re.search(pattern, text):
                 return True
-        # Also don't rewrite if it's an absolute URL (http:// or https://)
+        # Also don't rewrite absolute URLs
         if 'http://' in text or 'https://' in text:
             return True
         return False
     
     # Fix href/src/action attributes - only rewrite relative paths to the service
-    # But skip external API calls and absolute URLs
+    # But skip API calls and absolute URLs
     content = re.sub(
         r'(href|src|action)="(/)(?!' + re.escape(service) + r'/)',
-        lambda m: m.group(0) if should_not_rewrite(m) else rf'{m.group(1)}="/{service}/',
+        lambda m: m.group(0) if should_not_rewrite(m.group(0)) else rf'{m.group(1)}="/{service}/',
         content
     )
     
     # Fix single quotes - same logic
     content = re.sub(
         r"(href|src|action)='(/)(?!" + re.escape(service) + r"/)",
-        lambda m: m.group(0) if should_not_rewrite(m) else rf"{m.group(1)}='/{service}/",
+        lambda m: m.group(0) if should_not_rewrite(m.group(0)) else rf"{m.group(1)}='/{service}/",
         content
     )
     
-    # Fix HTML/CSS assets and navigation only (img, link, script)
-    # But NOT API calls
+    # Fix fetch() and axios calls - rewrite all "/" paths unless they're API endpoints
     content = re.sub(
-        r'((?:href|src)\s*=\s*["\'])(/(?:css|js|images?|static|assets?)/)',
-        rf'\1/{service}\2',
+        r'(fetch|axios\.\w+|get|post|put|delete)\s*\(\s*["\']/((?!' + re.escape(service) + r'/)[^"\']*)["\']',
+        lambda m: m.group(0) if should_not_rewrite('/' + m.group(2)) else rf'{m.group(1)}("/{service}/{m.group(2)}"',
+        content
+    )
+    
+    # Fix window.location assignments - skip API paths
+    content = re.sub(
+        r'window\.location\s*=\s*["\']/((?!' + re.escape(service) + r'/)[^"\']*)["\']',
+        lambda m: m.group(0) if should_not_rewrite('/' + m.group(1)) else rf'window.location="/{service}/{m.group(1)}"',
+        content
+    )
+    content = re.sub(
+        r'window\.location\.href\s*=\s*["\']/((?!' + re.escape(service) + r'/)[^"\']*)["\']',
+        lambda m: m.group(0) if should_not_rewrite('/' + m.group(1)) else rf'window.location.href="/{service}/{m.group(1)}"',
+        content
+    )
+    
+    # Fix JSON/string paths - rewrite "/" paths in strings unless they're API paths
+    content = re.sub(
+        r'":/((?!' + re.escape(service) + r'/)[^"]*)"',
+        lambda m: m.group(0) if should_not_rewrite('/' + m.group(1)) else rf'"/{service}/{m.group(1)}"',
         content
     )
     
