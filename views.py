@@ -152,8 +152,8 @@ def rewrite_json_urls(data, service):
     elif isinstance(data, list):
         return [rewrite_json_urls(item, service) for item in data]
     elif isinstance(data, str):
-        # Rewrite if it looks like a path (starts with /)
-        if data.startswith('/') and not data.startswith('//'):
+        # Rewrite if it looks like a path (starts with /) but doesn't already have the service prefix
+        if data.startswith('/') and not data.startswith('//') and not data.startswith(f'/{service}/'):
             return f'/{service}{data}'
         return data
     else:
@@ -162,44 +162,81 @@ def rewrite_json_urls(data, service):
 
 def rewrite_html(content, service):
     """Rewrite HTML content to fix URLs."""
-    # Rewrite href, src, action attributes with double quotes
-    content = re.sub(r'(href|src|action)="(/[^"]+)"', rf'\1="/{service}\2"', content)
-    # Rewrite href, src, action attributes with single quotes
-    content = re.sub(r"(href|src|action)='(/[^']+)'", rf"\1='/{service}\2'", content)
+    # Rewrite href, src, action attributes with double quotes (skip if already prefixed)
+    content = re.sub(
+        r'(href|src|action)="(/(?!' + re.escape(service) + r'/)[^"]+)"',
+        rf'\1="/{service}\2"',
+        content
+    )
+    # Rewrite href, src, action attributes with single quotes (skip if already prefixed)
+    content = re.sub(
+        r"(href|src|action)='(/(?!" + re.escape(service) + r"/)[^']+)'",
+        rf"\1='/{service}\2'",
+        content
+    )
     
-    # Rewrite fetch() calls in inline scripts
-    content = re.sub(r'fetch\s*\(\s*(["\'])(/[^"\']+)\1', rf'fetch(\1/{service}\2\1', content)
+    # Rewrite fetch() calls in inline scripts (skip if already prefixed)
+    content = re.sub(
+        r'fetch\s*\(\s*(["\'])(/(?!' + re.escape(service) + r'/)[^"\']+)\1',
+        rf'fetch(\1/{service}\2\1',
+        content
+    )
     
-    # Rewrite template literals - match `/path` at start of template literal
-    # This handles: `/${var}` or `/path/${var}` or `/path/fixed`
-    content = re.sub(r'`(\/[^`]*?)`', lambda m: f'`/{service}{m.group(1)}`', content)
+    # Rewrite template literals (skip if already prefixed)
+    def rewrite_template(match):
+        path = match.group(1)
+        if not path.startswith(f'/{service}/'):
+            return f'`/{service}{path}`'
+        return match.group(0)
     
-    # Rewrite window.location with template literals
-    content = re.sub(r'(window\.location(?:\.href)?\s*=\s*)`(\/[^`]+)`', rf'\1`/{service}\2`', content)
+    content = re.sub(r'`(\/[^`]*?)`', rewrite_template, content)
     
     return content
 
 
 def rewrite_javascript(content, service):
     """Rewrite JavaScript content to fix URLs."""
-    # Rewrite fetch() with proper quote matching
-    content = re.sub(r'fetch\s*\(\s*(["\'])(/[^"\']+)\1', rf'fetch(\1/{service}\2\1', content)
+    # Rewrite fetch() with proper quote matching (skip if already prefixed)
+    content = re.sub(
+        r'fetch\s*\(\s*(["\'])(/(?!' + re.escape(service) + r'/)[^"\']+)\1',
+        rf'fetch(\1/{service}\2\1',
+        content
+    )
     
-    # Rewrite xhr.open() with proper quote matching
-    content = re.sub(r'(xhr\.open\s*\([^,]+,\s*)(["\'])(/[^"\']+)\2', rf'\1\2/{service}\3\2', content)
+    # Rewrite xhr.open() with proper quote matching (skip if already prefixed)
+    content = re.sub(
+        r'(xhr\.open\s*\([^,]+,\s*)(["\'])(/(?!' + re.escape(service) + r'/)[^"\']+)\2',
+        rf'\1\2/{service}\3\2',
+        content
+    )
     
-    # Rewrite url: property with proper quote matching
-    content = re.sub(r'(url:\s*)(["\'])(/[^"\']+)\2', rf'\1\2/{service}\3\2', content)
+    # Rewrite url: property with proper quote matching (skip if already prefixed)
+    content = re.sub(
+        r'(url:\s*)(["\'])(/(?!' + re.escape(service) + r'/)[^"\']+)\2',
+        rf'\1\2/{service}\3\2',
+        content
+    )
     
-    # Rewrite window.location assignments with quotes
-    content = re.sub(r'(window\.location\s*=\s*)(["\'])(/[^"\']+)\2', rf'\1\2/{service}\3\2', content)
-    content = re.sub(r'(window\.location\.href\s*=\s*)(["\'])(/[^"\']+)\2', rf'\1\2/{service}\3\2', content)
+    # Rewrite window.location assignments with quotes (skip if already prefixed)
+    content = re.sub(
+        r'(window\.location\s*=\s*)(["\'])(/(?!' + re.escape(service) + r'/)[^"\']+)\2',
+        rf'\1\2/{service}\3\2',
+        content
+    )
+    content = re.sub(
+        r'(window\.location\.href\s*=\s*)(["\'])(/(?!' + re.escape(service) + r'/)[^"\']+)\2',
+        rf'\1\2/{service}\3\2',
+        content
+    )
     
-    # Rewrite template literals - match `/path` at start of template literal
-    content = re.sub(r'`(\/[^`]*?)`', lambda m: f'`/{service}{m.group(1)}`', content)
+    # Rewrite template literals (skip if already prefixed)
+    def rewrite_template(match):
+        path = match.group(1)
+        if not path.startswith(f'/{service}/'):
+            return f'`/{service}{path}`'
+        return match.group(0)
     
-    # Rewrite window.location with template literals
-    content = re.sub(r'(window\.location(?:\.href)?\s*=\s*)`(\/[^`]+)`', rf'\1`/{service}\2`', content)
+    content = re.sub(r'`(\/[^`]*?)`', rewrite_template, content)
     
     return content
 
@@ -215,8 +252,8 @@ def rewrite_css(content, service):
 
 def rewrite_location(location, service, target_domain):
     """Rewrite Location header for redirects."""
-    # Handle relative paths (most common case)
-    if location.startswith('/') and not location.startswith('//'):
+    # Handle relative paths (most common case) - skip if already prefixed
+    if location.startswith('/') and not location.startswith('//') and not location.startswith(f'/{service}/'):
         return f'/{service}{location}'
     # Handle absolute URLs pointing to the target domain
     elif location.startswith(f'https://{target_domain}/'):
