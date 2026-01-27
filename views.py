@@ -141,6 +141,10 @@ def proxy_view(request, service, path=''):
             if k.lower() not in ['connection', 'host']:
                 headers[k] = v
         
+        # Remove accept-encoding to prevent compression
+        if 'Accept-Encoding' in headers:
+            del headers['Accept-Encoding']
+        
         if 'Referer' in headers:
             headers['Referer'] = re.sub(
                 rf'https?://[^/]+/{service}/',
@@ -167,8 +171,20 @@ def proxy_view(request, service, path=''):
             timeout=30
         )
         
-        # Get the raw content - requests lib handles decompression automatically
+        # Manually handle decompression
         content = resp.content
+        encoding = resp.headers.get('content-encoding', '').lower()
+        
+        if encoding == 'gzip':
+            try:
+                content = gzip.decompress(content)
+            except Exception as e:
+                print(f"[WARNING] Gzip decompression failed: {e}")
+        elif encoding == 'deflate':
+            try:
+                content = zlib.decompress(content)
+            except Exception as e:
+                print(f"[WARNING] Deflate decompression failed: {e}")
         
         content_type = resp.headers.get('content-type', '')
         
