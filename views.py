@@ -232,46 +232,57 @@ def proxy_view(request, service, path=''):
 def rewrite_content(content, service):
     """Rewrite URLs in content to include service prefix.
     
-    Only rewrites relative paths. Never touches absolute URLs (http://, https://, //).
+    Only rewrites relative paths starting with /. Never touches absolute URLs.
     """
+    
+    # Never rewrite if line contains http:// or https://
+    def safe_rewrite(match):
+        full_match = match.group(0)
+        # Check if this match is part of an absolute URL
+        start = max(0, match.start() - 10)
+        context = content[start:match.end() + 10]
+        if 'http://' in context or 'https://' in context:
+            return full_match
+        return match.group(1) + '"/' + service + match.group(2) + '"'
+    
+    def safe_rewrite_single(match):
+        full_match = match.group(0)
+        start = max(0, match.start() - 10)
+        context = content[start:match.end() + 10]
+        if 'http://' in context or 'https://' in context:
+            return full_match
+        return match.group(1) + "'/" + service + match.group(2) + "'"
     
     # Fix href/src/action attributes - only relative paths
     content = re.sub(
-        r'(href|src|action)="(/(?!/)(?!' + re.escape(service) + r'/)(?!http)[^"]*)"',
-        rf'\1="/{service}\2"',
+        r'((?:href|src|action)=")(/(?!' + re.escape(service) + r'/)[^"]*)"',
+        safe_rewrite,
         content
     )
     
-    # Fix single quotes
     content = re.sub(
-        r"(href|src|action)='(/(?!/)(?!" + re.escape(service) + r"/)(?!http)[^']*)'",
-        rf"\1='/{service}\2'",
+        r"((?:href|src|action)=')(/(?!" + re.escape(service) + r"/)[^']*)'",
+        safe_rewrite_single,
         content
     )
     
-    # Fix fetch/axios calls - only relative paths starting with /
+    # Fix fetch/axios - only relative paths, not in absolute URLs
     content = re.sub(
-        r'(fetch|axios\.\w+|\.get|\.post|\.put|\.delete)\s*\(\s*["\'](/(?!/)(?!' + re.escape(service) + r'/)(?!http)[^"\']*)["\']',
-        rf'\1("/{service}\2"',
+        r'(fetch\s*\(\s*")(/(?!' + re.escape(service) + r'/)[^"]*)"',
+        safe_rewrite,
         content
     )
     
-    # Fix window.location - only relative paths
+    # Fix window.location
     content = re.sub(
-        r'window\.location\s*=\s*["\'](/(?!/)(?!' + re.escape(service) + r'/)(?!http)[^"\']*)["\']',
-        rf'window.location="/{service}\1"',
-        content
-    )
-    content = re.sub(
-        r'window\.location\.href\s*=\s*["\'](/(?!/)(?!' + re.escape(service) + r'/)(?!http)[^"\']*)["\']',
-        rf'window.location.href="/{service}\1"',
+        r'(window\.location\s*=\s*")(/(?!' + re.escape(service) + r'/)[^"]*)"',
+        safe_rewrite,
         content
     )
     
-    # Fix JSON paths - only relative paths
     content = re.sub(
-        r'":(/(?!/)(?!' + re.escape(service) + r'/)(?!http)[^"]*)"',
-        rf'"/{service}\1"',
+        r'(window\.location\.href\s*=\s*")(/(?!' + re.escape(service) + r'/)[^"]*)"',
+        safe_rewrite,
         content
     )
     
