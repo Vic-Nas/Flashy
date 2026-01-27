@@ -41,9 +41,9 @@ def unknown_service_page(service):
     Please check that:
   </p>
   <ul style="color: #666;">
-    <li>The service name is correct</li>
-    <li>The service is currently running</li>
-    <li>The service is accessible from this proxy</li>
+    <li>Environment variable <code style="background: #f0f0f0; padding: 2px 6px; border-radius: 3px;">SERVICE_{service.upper()}=your-domain.com</code> is defined</li>
+    <li>The target service is currently running and accessible</li>
+    <li>The domain in SERVICE_{service.upper()} is correct</li>
   </ul>
   
   <div class="home-link">
