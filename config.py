@@ -6,7 +6,7 @@ import os
 SERVICES = {}
 for key, value in os.environ.items():
     if key.startswith('SERVICE_'):
-        service_name = key.replace('SERVICE_', '').lower()
+        service_name = key.replace('SERVICE_', '')
         SERVICES[service_name] = value
 
 # Fallback pattern if no SERVICE_ vars set
