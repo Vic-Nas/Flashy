@@ -11,7 +11,10 @@ def home(request):
     html = """
     <!DOCTYPE html>
     <html>
-    <head><title>Reverse Proxy</title></head>
+    <head>
+        <title>Reverse Proxy</title>
+        <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
+    </head>
     <body style="font-family: sans-serif; max-width: 600px; margin: 50px auto;">
         <h1>🔄 Reverse Proxy Active</h1>
         <p>This service proxies requests to backend services.</p>
@@ -20,7 +23,9 @@ def home(request):
     </body>
     </html>
     """
-    return HttpResponse(html)
+    response = HttpResponse(html)
+    response['Content-Security-Policy'] = 'upgrade-insecure-requests'
+    return response
 
 
 @csrf_exempt
@@ -107,6 +112,8 @@ def proxy_view(request, service, path=''):
             content = resp.content.decode('utf-8', errors='ignore')
             content = rewrite_html(content, service)
             response = HttpResponse(content, status=resp.status_code)
+            # Add CSP header to upgrade insecure requests in proxied HTML
+            response['Content-Security-Policy'] = 'upgrade-insecure-requests'
         elif 'javascript' in content_type:
             content = resp.content.decode('utf-8', errors='ignore')
             content = rewrite_javascript(content, service)
@@ -145,12 +152,14 @@ def proxy_view(request, service, path=''):
 
 
 def rewrite_json_urls(data, service):
-    """Recursively rewrite URLs in JSON data."""
+    """Recursively rewrite URLs in JSON data - ensure HTTPS."""
     if isinstance(data, dict):
         return {key: rewrite_json_urls(value, service) for key, value in data.items()}
     elif isinstance(data, list):
         return [rewrite_json_urls(item, service) for item in data]
     elif isinstance(data, str):
+        # Rewrite HTTP to HTTPS in URLs
+        data = re.sub(r'http://', 'https://', data)
         # Rewrite if it looks like a path but doesn't already have the service prefix
         if data.startswith('/') and not data.startswith('//') and not data.startswith(f'/{service}/'):
             return f'/{service}{data}'
@@ -160,7 +169,17 @@ def rewrite_json_urls(data, service):
 
 
 def rewrite_html(content, service):
-    """Rewrite HTML content to fix URLs."""
+    """Rewrite HTML content to fix URLs and enforce HTTPS."""
+    # Upgrade HTTP links to HTTPS
+    content = re.sub(r'http://', 'https://', content)
+    
+    # Add CSP meta tag if not present
+    if '<head>' in content and 'Content-Security-Policy' not in content:
+        content = content.replace(
+            '<head>',
+            '<head>\n<meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">'
+        )
+    
     # Rewrite href, src, action attributes (skip if already prefixed)
     content = re.sub(
         r'(href|src|action)="(/(?!' + re.escape(service) + r'/)[^"]+)"',
@@ -180,7 +199,12 @@ def rewrite_html(content, service):
         content
     )
     
-    # Rewrite WebSocket connections (new!)
+    # Rewrite WebSocket connections (upgrade to wss://)
+    content = re.sub(
+        r'(new\s+WebSocket\s*\(\s*(["\']))(ws://)',
+        r'\1wss://',
+        content
+    )
     content = re.sub(
         r'(new\s+WebSocket\s*\(\s*(["\'])(?:wss?://[^/]+)?)/(?!' + re.escape(service) + r'/)([^"\']+)\2',
         rf'\1/{service}/\3\2',
@@ -200,7 +224,10 @@ def rewrite_html(content, service):
 
 
 def rewrite_javascript(content, service):
-    """Rewrite JavaScript content to fix URLs."""
+    """Rewrite JavaScript content to fix URLs and enforce HTTPS."""
+    # Upgrade HTTP to HTTPS
+    content = re.sub(r'http://', 'https://', content)
+    
     # Rewrite fetch() (skip if already prefixed)
     content = re.sub(
         r'fetch\s*\(\s*(["\'])(/(?!' + re.escape(service) + r'/)[^"\']+)\1',
@@ -234,7 +261,12 @@ def rewrite_javascript(content, service):
         content
     )
     
-    # Rewrite WebSocket connections (new!)
+    # Rewrite WebSocket connections (upgrade to wss://)
+    content = re.sub(
+        r'(new\s+WebSocket\s*\(\s*(["\']))(ws://)',
+        r'\1wss://',
+        content
+    )
     content = re.sub(
         r'(new\s+WebSocket\s*\(\s*(["\'])(?:wss?://[^/]+)?)/(?!' + re.escape(service) + r'/)([^"\']+)\2',
         rf'\1/{service}/\3\2',
@@ -254,7 +286,10 @@ def rewrite_javascript(content, service):
 
 
 def rewrite_css(content, service):
-    """Rewrite CSS content to fix URLs in url() declarations."""
+    """Rewrite CSS content to fix URLs in url() declarations and enforce HTTPS."""
+    # Upgrade HTTP to HTTPS
+    content = re.sub(r'http://', 'https://', content)
+    
     content = re.sub(r'url\s*\(\s*(["\'])(/[^"\']+)\1\s*\)', rf'url(\1/{service}\2\1)', content)
     content = re.sub(r'url\s*\(\s*(/[^\)]+)\s*\)', rf'url(/{service}\1)', content)
     return content
@@ -272,10 +307,15 @@ def rewrite_location(location, service, target_domain):
 
 
 def rewrite_cookie(cookie, service):
-    """Rewrite cookie to work with the proxy."""
+    """Rewrite cookie to work with the proxy - ensure Secure flag."""
     cookie = re.sub(r';\s*Domain=[^;]+', '', cookie, flags=re.IGNORECASE)
     if not re.search(r'Path=', cookie, flags=re.IGNORECASE):
         cookie += f'; Path=/{service}/'
     else:
         cookie = re.sub(r'(Path=)(/[^;]*)', rf'\1/{service}\2', cookie, flags=re.IGNORECASE)
+    
+    # Add Secure flag if not present
+    if not re.search(r';\s*Secure', cookie, flags=re.IGNORECASE):
+        cookie += '; Secure'
+    
     return cookie

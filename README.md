@@ -31,6 +31,7 @@ It automatically rewrites:
 - JavaScript fetch() calls
 - Redirects and cookies
 - Location headers
+- **HTTP → HTTPS upgrades** (prevents mixed content warnings)
 
 ## Quick Start
 
@@ -96,6 +97,35 @@ ALLOWED_SERVICES = ['api', 'web', 'admin']
 BLOCKED_SERVICES = ['www', 'mail', 'ftp', 'ssh']
 ```
 
+## Security Features
+
+This proxy now includes:
+- ✅ **HTTPS enforcement** - automatically redirects HTTP to HTTPS
+- ✅ **Mixed content prevention** - upgrades all HTTP resources to HTTPS
+- ✅ **Secure cookies** - adds Secure flag to all cookies
+- ✅ **Content Security Policy** - prevents browsers from loading insecure content
+- ✅ **WebSocket upgrade** - automatically converts `ws://` to `wss://`
+
+### Fixing "Not Secure" Warnings
+
+If your browser shows "Not Secure" even with a valid SSL certificate:
+
+1. **Check if it's a mixed content issue:**
+   - Open browser DevTools → Console
+   - Look for "Mixed Content" warnings
+   - This happens when HTTPS pages try to load HTTP resources
+
+2. **This proxy automatically fixes it by:**
+   - Adding `Content-Security-Policy: upgrade-insecure-requests` header
+   - Rewriting all HTTP URLs to HTTPS in HTML/CSS/JS
+   - Setting secure flags on all cookies
+   - Upgrading WebSocket connections to WSS
+
+3. **If issues persist:**
+   - Ensure your backend services serve HTTPS (or allow HTTP→HTTPS upgrade)
+   - Check that backend doesn't force HTTP in responses
+   - Clear browser cache and hard refresh (Ctrl+Shift+R)
+
 ## Use Cases
 
 ✅ **Perfect For:**
@@ -104,6 +134,7 @@ BLOCKED_SERVICES = ['www', 'mail', 'ftp', 'ssh']
 - Simplified DNS configuration
 - Microservices behind one domain
 - Development/staging environments
+- **Fixing mixed content warnings**
 
 ❌ **Not Ideal For:**
 - High-traffic production (consider a proper API gateway)
@@ -116,11 +147,11 @@ BLOCKED_SERVICES = ['www', 'mail', 'ftp', 'ssh']
 ```html
 <!-- Original from backend -->
 <a href="/login">Login</a>
-<img src="/static/logo.png">
+<img src="http://example.com/logo.png">
 
 <!-- Rewritten by proxy -->
 <a href="/api/login">Login</a>
-<img src="/api/static/logo.png">
+<img src="https://example.com/logo.png">
 ```
 
 **JavaScript:**
@@ -139,18 +170,27 @@ Location: /dashboard
 Location: /admin/dashboard
 ```
 
+**WebSockets:**
+```javascript
+// Original
+new WebSocket('ws://example.com/socket')
+
+// Rewritten
+new WebSocket('wss://example.com/socket')
+```
+
 ## Architecture
 
 ```
 Client Request
     ↓
-Your Domain (this proxy)
+Your Domain (this proxy) - HTTPS enforced
     ↓
 /{service}/{path}
     ↓
 Forwarded to: https://{service}.platform.com/{path}
     ↓
-Response rewritten
+Response rewritten (HTTP → HTTPS)
     ↓
 Returned to Client
 ```
@@ -158,9 +198,9 @@ Returned to Client
 ## Files Overview
 
 - `config.py` - Main configuration (edit this!)
-- `views.py` - Request handling and URL rewriting
+- `views.py` - Request handling and URL rewriting + HTTPS enforcement
 - `urls.py` - URL routing
-- `settings.py` - Django settings
+- `settings.py` - Django settings + security headers
 - `wsgi.py` - WSGI application entry point
 - `Dockerfile` - Container configuration
 
@@ -178,7 +218,19 @@ Returned to Client
 
 **Cookies not working:**
 - Check `SameSite` and `Secure` flags
-- Ensure proxy and backend use same protocol (HTTP/HTTPS)
+- Ensure proxy and backend use same protocol (HTTPS)
+- Cookies now automatically get Secure flag
+
+**"Not Secure" warning with valid SSL:**
+- This is **mixed content** (HTTPS page loading HTTP resources)
+- Check browser console for mixed content warnings
+- This version automatically upgrades HTTP → HTTPS
+- If persists, ensure backend doesn't force HTTP in responses
+
+**Content still showing as insecure:**
+- Clear browser cache (Ctrl+Shift+R)
+- Check that backend services support HTTPS
+- Verify CSP headers are being sent (check DevTools → Network → Headers)
 
 ## Contributing
 
@@ -195,3 +247,12 @@ MIT - Use however you want!
 ## Credits
 
 A simple tool for those who don't like adding subdomains. 🚀
+
+## Changelog
+
+### v2.0 - Security & HTTPS Enforcement
+- Added automatic HTTP → HTTPS upgrade
+- Mixed content prevention via CSP headers
+- Secure cookie flags
+- WebSocket protocol upgrade (ws → wss)
+- HTTPS redirect enforcement
