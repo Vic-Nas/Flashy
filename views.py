@@ -47,8 +47,8 @@ def proxy_view(request, service, path=''):
     if request.META.get('QUERY_STRING'):
         url += f"?{request.META['QUERY_STRING']}"
     
-    # Only log non-static requests
-    if not path.startswith('static/') and not path.endswith('.svg') and not path.endswith('.ico'):
+    # Only log meaningful requests
+    if not any(path.endswith(ext) for ext in ['.svg', '.ico', '.css', '.js', '.png', '.jpg']):
         print(f"[PROXY] {request.method} /{service}/{path}")
     
     try:
@@ -96,7 +96,6 @@ def proxy_view(request, service, path=''):
         
         # Rewrite content based on type
         if 'application/json' in content_type:
-            # Rewrite JSON responses containing URLs
             try:
                 content = resp.content.decode('utf-8', errors='ignore')
                 data = json.loads(content)
@@ -152,7 +151,7 @@ def rewrite_json_urls(data, service):
     elif isinstance(data, list):
         return [rewrite_json_urls(item, service) for item in data]
     elif isinstance(data, str):
-        # Rewrite if it looks like a path (starts with /) but doesn't already have the service prefix
+        # Rewrite if it looks like a path but doesn't already have the service prefix
         if data.startswith('/') and not data.startswith('//') and not data.startswith(f'/{service}/'):
             return f'/{service}{data}'
         return data
@@ -162,23 +161,29 @@ def rewrite_json_urls(data, service):
 
 def rewrite_html(content, service):
     """Rewrite HTML content to fix URLs."""
-    # Rewrite href, src, action attributes with double quotes (skip if already prefixed)
+    # Rewrite href, src, action attributes (skip if already prefixed)
     content = re.sub(
         r'(href|src|action)="(/(?!' + re.escape(service) + r'/)[^"]+)"',
         rf'\1="/{service}\2"',
         content
     )
-    # Rewrite href, src, action attributes with single quotes (skip if already prefixed)
     content = re.sub(
         r"(href|src|action)='(/(?!" + re.escape(service) + r"/)[^']+)'",
         rf"\1='/{service}\2'",
         content
     )
     
-    # Rewrite fetch() calls in inline scripts (skip if already prefixed)
+    # Rewrite fetch() calls (skip if already prefixed)
     content = re.sub(
         r'fetch\s*\(\s*(["\'])(/(?!' + re.escape(service) + r'/)[^"\']+)\1',
         rf'fetch(\1/{service}\2\1',
+        content
+    )
+    
+    # Rewrite WebSocket connections (new!)
+    content = re.sub(
+        r'(new\s+WebSocket\s*\(\s*(["\'])(?:wss?://[^/]+)?)/(?!' + re.escape(service) + r'/)([^"\']+)\2',
+        rf'\1/{service}/\3\2',
         content
     )
     
@@ -189,35 +194,35 @@ def rewrite_html(content, service):
             return f'`/{service}{path}`'
         return match.group(0)
     
-    content = re.sub(r'`(\/[^`]*?)`', rewrite_template, content)
+    content = re.sub(r'`(/(?!' + re.escape(service) + r'/)[^`]*?)`', rewrite_template, content)
     
     return content
 
 
 def rewrite_javascript(content, service):
     """Rewrite JavaScript content to fix URLs."""
-    # Rewrite fetch() with proper quote matching (skip if already prefixed)
+    # Rewrite fetch() (skip if already prefixed)
     content = re.sub(
         r'fetch\s*\(\s*(["\'])(/(?!' + re.escape(service) + r'/)[^"\']+)\1',
         rf'fetch(\1/{service}\2\1',
         content
     )
     
-    # Rewrite xhr.open() with proper quote matching (skip if already prefixed)
+    # Rewrite xhr.open() (skip if already prefixed)
     content = re.sub(
         r'(xhr\.open\s*\([^,]+,\s*)(["\'])(/(?!' + re.escape(service) + r'/)[^"\']+)\2',
         rf'\1\2/{service}\3\2',
         content
     )
     
-    # Rewrite url: property with proper quote matching (skip if already prefixed)
+    # Rewrite url: property (skip if already prefixed)
     content = re.sub(
         r'(url:\s*)(["\'])(/(?!' + re.escape(service) + r'/)[^"\']+)\2',
         rf'\1\2/{service}\3\2',
         content
     )
     
-    # Rewrite window.location assignments with quotes (skip if already prefixed)
+    # Rewrite window.location (skip if already prefixed)
     content = re.sub(
         r'(window\.location\s*=\s*)(["\'])(/(?!' + re.escape(service) + r'/)[^"\']+)\2',
         rf'\1\2/{service}\3\2',
@@ -229,6 +234,13 @@ def rewrite_javascript(content, service):
         content
     )
     
+    # Rewrite WebSocket connections (new!)
+    content = re.sub(
+        r'(new\s+WebSocket\s*\(\s*(["\'])(?:wss?://[^/]+)?)/(?!' + re.escape(service) + r'/)([^"\']+)\2',
+        rf'\1/{service}/\3\2',
+        content
+    )
+    
     # Rewrite template literals (skip if already prefixed)
     def rewrite_template(match):
         path = match.group(1)
@@ -236,39 +248,32 @@ def rewrite_javascript(content, service):
             return f'`/{service}{path}`'
         return match.group(0)
     
-    content = re.sub(r'`(\/[^`]*?)`', rewrite_template, content)
+    content = re.sub(r'`(/(?!' + re.escape(service) + r'/)[^`]*?)`', rewrite_template, content)
     
     return content
 
 
 def rewrite_css(content, service):
     """Rewrite CSS content to fix URLs in url() declarations."""
-    # Rewrite url() with quotes
     content = re.sub(r'url\s*\(\s*(["\'])(/[^"\']+)\1\s*\)', rf'url(\1/{service}\2\1)', content)
-    # Rewrite url() without quotes
     content = re.sub(r'url\s*\(\s*(/[^\)]+)\s*\)', rf'url(/{service}\1)', content)
     return content
 
 
 def rewrite_location(location, service, target_domain):
     """Rewrite Location header for redirects."""
-    # Handle relative paths (most common case) - skip if already prefixed
     if location.startswith('/') and not location.startswith('//') and not location.startswith(f'/{service}/'):
         return f'/{service}{location}'
-    # Handle absolute URLs pointing to the target domain
     elif location.startswith(f'https://{target_domain}/'):
         return location.replace(f'https://{target_domain}/', f'/{service}/')
     elif location.startswith(f'http://{target_domain}/'):
         return location.replace(f'http://{target_domain}/', f'/{service}/')
-    # Return unchanged for external URLs or protocol-relative URLs
     return location
 
 
 def rewrite_cookie(cookie, service):
     """Rewrite cookie to work with the proxy."""
-    # Remove Domain restriction
     cookie = re.sub(r';\s*Domain=[^;]+', '', cookie, flags=re.IGNORECASE)
-    # Update Path to include service prefix
     if not re.search(r'Path=', cookie, flags=re.IGNORECASE):
         cookie += f'; Path=/{service}/'
     else:
