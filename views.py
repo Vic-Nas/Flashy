@@ -2,6 +2,8 @@ from django.http import HttpResponse, JsonResponse, HttpResponseRedirect
 from django.views.decorators.csrf import csrf_exempt
 import requests
 import re
+import gzip
+import io
 from config import SERVICES, TARGET_DOMAIN_PATTERN, BLOCKED_SERVICES
 
 
@@ -108,9 +110,12 @@ def proxy_view(request, service, path=''):
         target_domain = SERVICES[service]
     else:
         target_domain = TARGET_DOMAIN_PATTERN.format(service=service)
-        # Test if service is reachable, if not show landing page
+        # Test if service exists by making a request
         try:
-            test_resp = requests.head(f'https://{target_domain}', timeout=5, allow_redirects=False)
+            test_resp = requests.get(f'https://{target_domain}/', timeout=5, allow_redirects=True)
+            # Check if it's a Railway "not found" page
+            if test_resp.status_code == 404 or ('Railway' in test_resp.text and 'not found' in test_resp.text.lower()):
+                return unknown_service_page(service)
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout, requests.exceptions.RequestException):
             # Service doesn't exist or is unreachable
             return unknown_service_page(service)
@@ -161,18 +166,26 @@ def proxy_view(request, service, path=''):
             timeout=30
         )
         
+        # Handle content encoding (decompress gzip/deflate)
+        content = resp.content
+        if resp.headers.get('content-encoding') == 'gzip':
+            try:
+                content = gzip.decompress(content)
+            except:
+                pass  # If decompression fails, use original content
+        
         content_type = resp.headers.get('content-type', '')
         
         if 'text/html' in content_type:
-            content = resp.content.decode('utf-8', errors='ignore')
-            content = rewrite_content(content, service)
-            response = HttpResponse(content, status=resp.status_code)
+            text_content = content.decode('utf-8', errors='ignore')
+            text_content = rewrite_content(text_content, service)
+            response = HttpResponse(text_content, status=resp.status_code)
         elif 'javascript' in content_type or 'application/json' in content_type:
-            content = resp.content.decode('utf-8', errors='ignore')
-            content = rewrite_content(content, service)
-            response = HttpResponse(content, status=resp.status_code)
+            text_content = content.decode('utf-8', errors='ignore')
+            text_content = rewrite_content(text_content, service)
+            response = HttpResponse(text_content, status=resp.status_code)
         else:
-            response = HttpResponse(resp.content, status=resp.status_code)
+            response = HttpResponse(content, status=resp.status_code)
         
         for key, value in resp.headers.items():
             if key.lower() not in ['connection', 'transfer-encoding', 'content-encoding', 'content-length', 'set-cookie']:
