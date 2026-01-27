@@ -230,48 +230,52 @@ def proxy_view(request, service, path=''):
 
 
 def rewrite_content(content, service):
-    """Rewrite URLs in content to include service prefix."""
+    """Rewrite URLs in content to include service prefix.
     
-    # Rewrite ALL absolute paths to include service prefix
-    # This ensures everything (assets, api, static, etc) routes through the proxy correctly
+    Only rewrite relative navigation paths and assets.
+    Do NOT rewrite API calls to external services or absolute URLs.
+    """
     
-    # Fix href/src/action attributes - rewrite all "/" paths
+    # Don't rewrite paths that are clearly external APIs or absolute URLs
+    # List of API patterns that should NOT be rewritten
+    api_patterns = [
+        r'api\.github\.com',
+        r'github\.com/api',
+        r'://api\.',
+        r'://[a-z0-9-]+\.api\.',
+    ]
+    
+    # Helper to check if a path is an external API call
+    def should_not_rewrite(match):
+        text = match.group(0)
+        for pattern in api_patterns:
+            if re.search(pattern, text):
+                return True
+        # Also don't rewrite if it's an absolute URL (http:// or https://)
+        if 'http://' in text or 'https://' in text:
+            return True
+        return False
+    
+    # Fix href/src/action attributes - only rewrite relative paths to the service
+    # But skip external API calls and absolute URLs
     content = re.sub(
         r'(href|src|action)="(/)(?!' + re.escape(service) + r'/)',
-        rf'\1="/{service}/',
+        lambda m: m.group(0) if should_not_rewrite(m) else rf'{m.group(1)}="/{service}/',
         content
     )
     
-    # Fix single quotes
+    # Fix single quotes - same logic
     content = re.sub(
         r"(href|src|action)='(/)(?!" + re.escape(service) + r"/)",
-        rf"\1='/{service}/",
+        lambda m: m.group(0) if should_not_rewrite(m) else rf"{m.group(1)}='/{service}/",
         content
     )
     
-    # Fix fetch() and axios calls - rewrite all "/" paths
+    # Fix HTML/CSS assets and navigation only (img, link, script)
+    # But NOT API calls
     content = re.sub(
-        r'(fetch|axios\.\w+|get|post|put|delete)\s*\(\s*["\']/((?!' + re.escape(service) + r'/)[^"\']*)["\']',
-        rf'\1("/{service}/\2"',
-        content
-    )
-    
-    # Fix window.location assignments
-    content = re.sub(
-        r'window\.location\s*=\s*["\']/((?!' + re.escape(service) + r'/)[^"\']*)["\']',
-        rf'window.location="/{service}/\1"',
-        content
-    )
-    content = re.sub(
-        r'window\.location\.href\s*=\s*["\']/((?!' + re.escape(service) + r'/)[^"\']*)["\']',
-        rf'window.location.href="/{service}/\1"',
-        content
-    )
-    
-    # Fix JSON/string paths - rewrite "/" paths in strings
-    content = re.sub(
-        r'":/((?!' + re.escape(service) + r'/)[^"]*)"',
-        rf'"/{service}/\1"',
+        r'((?:href|src)\s*=\s*["\'])(/(?:css|js|images?|static|assets?)/)',
+        rf'\1/{service}\2',
         content
     )
     
