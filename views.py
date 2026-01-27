@@ -194,7 +194,9 @@ def proxy_view(request, service, path=''):
             response = HttpResponse(text_content, status=resp.status_code)
         elif 'javascript' in content_type or 'application/json' in content_type:
             text_content = content.decode('utf-8', errors='ignore')
-            text_content = rewrite_content(text_content, service)
+            # Don't rewrite JS/JSON if it contains external API calls
+            if 'api.' not in text_content and '://api' not in text_content:
+                text_content = rewrite_content(text_content, service)
             response = HttpResponse(text_content, status=resp.status_code)
         else:
             response = HttpResponse(content, status=resp.status_code)
@@ -232,56 +234,50 @@ def proxy_view(request, service, path=''):
 def rewrite_content(content, service):
     """Rewrite URLs in content to include service prefix.
     
-    Only rewrites relative paths starting with /. Never touches absolute URLs.
+    Only rewrites paths like /path/to/resource. Never touches domains or absolute URLs.
     """
     
-    # Never rewrite if line contains http:// or https://
+    # Ultra-safe check: skip if context contains any domain-like pattern
     def safe_rewrite(match):
         full_match = match.group(0)
-        # Check if this match is part of an absolute URL
-        start = max(0, match.start() - 10)
-        context = content[start:match.end() + 10]
-        if 'http://' in context or 'https://' in context:
+        # Get surrounding context
+        start = max(0, match.start() - 20)
+        end = min(len(content), match.end() + 20)
+        context = content[start:end]
+        
+        # Skip if context looks like it contains a domain or protocol
+        if any(x in context for x in ['http://', 'https://', '://', '.com', '.io', '.org', '.net', 'api.']):
             return full_match
+        
         return match.group(1) + '"/' + service + match.group(2) + '"'
     
     def safe_rewrite_single(match):
         full_match = match.group(0)
-        start = max(0, match.start() - 10)
-        context = content[start:match.end() + 10]
-        if 'http://' in context or 'https://' in context:
+        start = max(0, match.start() - 20)
+        end = min(len(content), match.end() + 20)
+        context = content[start:end]
+        
+        if any(x in context for x in ['http://', 'https://', '://', '.com', '.io', '.org', '.net', 'api.']):
             return full_match
+        
         return match.group(1) + "'/" + service + match.group(2) + "'"
     
-    # Fix href/src/action attributes - only relative paths
+    # Only rewrite obvious relative paths in attributes
     content = re.sub(
-        r'((?:href|src|action)=")(/(?!' + re.escape(service) + r'/)[^"]*)"',
+        r'((?:href|src|action)=")(/[a-zA-Z][^"]*)"',
         safe_rewrite,
         content
     )
     
     content = re.sub(
-        r"((?:href|src|action)=')(/(?!" + re.escape(service) + r"/)[^']*)'",
+        r"((?:href|src|action)=')(/[a-zA-Z][^']*)'",
         safe_rewrite_single,
         content
     )
     
-    # Fix fetch/axios - only relative paths, not in absolute URLs
+    # Only rewrite fetch calls with simple relative paths
     content = re.sub(
-        r'(fetch\s*\(\s*")(/(?!' + re.escape(service) + r'/)[^"]*)"',
-        safe_rewrite,
-        content
-    )
-    
-    # Fix window.location
-    content = re.sub(
-        r'(window\.location\s*=\s*")(/(?!' + re.escape(service) + r'/)[^"]*)"',
-        safe_rewrite,
-        content
-    )
-    
-    content = re.sub(
-        r'(window\.location\.href\s*=\s*")(/(?!' + re.escape(service) + r'/)[^"]*)"',
+        r'(fetch\s*\(\s*")(/[a-zA-Z][^"]*)"',
         safe_rewrite,
         content
     )
