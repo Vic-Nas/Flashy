@@ -52,9 +52,23 @@ Access your services via paths:
 
 Unknown services show a friendly "not found" page.
 
+## Best For
+
+✅ **Works great:**
+- Static sites (HTML/CSS/JS)
+- Simple web apps with assets in `/static` or `/assets`
+- REST APIs with standard routing
+- Apps that don't hardcode absolute paths
+
+❌ **May not work:**
+- Apps requiring root path (like n8n, Grafana, etc.)
+- Apps that need to be path-aware (no config for base path)
+- Complex SPAs with hardcoded asset references
+- Services requiring subdomain-based authentication
+
 ## Notes
 
 - Each service is defined via `SERVICE_name=domain` env variables
-- Content is automatically rewritten to work behind the proxy
+- Content URLs are automatically rewritten to work behind the proxy
 - Supports HTML, JSON, CSS, JavaScript
 - WebSockets are not supported
