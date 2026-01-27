@@ -190,6 +190,37 @@ def proxy_view(request, service, path=''):
         
         if 'text/html' in content_type:
             text_content = content.decode('utf-8', errors='ignore')
+            
+            # Inject script to make proxy transparent to JavaScript
+            proxy_script = f"""
+<script>
+(function() {{
+    const servicePath = '/{service}/';
+    const originalPathname = window.location.pathname;
+    
+    // Override pathname to remove service prefix
+    Object.defineProperty(window.location, 'pathname', {{
+        get: function() {{
+            if (originalPathname.startsWith(servicePath)) {{
+                return originalPathname.substring(servicePath.length - 1) || '/';
+            }}
+            return originalPathname;
+        }},
+        configurable: true
+    }});
+}})();
+</script>
+"""
+            # Inject before </head> or at start of <body> or at start of HTML
+            if '<head>' in text_content:
+                text_content = text_content.replace('<head>', '<head>' + proxy_script, 1)
+            elif '<body>' in text_content:
+                text_content = text_content.replace('<body>', '<body>' + proxy_script, 1)
+            elif '<html>' in text_content:
+                text_content = text_content.replace('<html>', '<html>' + proxy_script, 1)
+            else:
+                text_content = proxy_script + text_content
+            
             text_content = rewrite_content(text_content, service)
             response = HttpResponse(text_content, status=resp.status_code)
         elif 'javascript' in content_type or 'application/json' in content_type:
