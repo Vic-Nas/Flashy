@@ -87,8 +87,6 @@ def proxy_view(request, service, path=''):
         
         if 'text/html' in content_type:
             content = resp.content.decode('utf-8', errors='ignore')
-            # Inject BASE_PATH variable and rewrite URLs
-            content = inject_base_path(content, service)
             content = rewrite_content(content, service)
             response = HttpResponse(content, status=resp.status_code)
         elif 'javascript' in content_type or 'application/json' in content_type:
@@ -122,66 +120,56 @@ def proxy_view(request, service, path=''):
         return JsonResponse({'error': str(e)}, status=502)
 
 
-def inject_base_path(content, service):
-    """Inject BASE_PATH variable into HTML for backend to use."""
-    base_script = f'''<script>
-window.BASE_PATH = '/{service}';
-// Override window.location setter to auto-prefix paths
-const originalLocationSetter = Object.getOwnPropertyDescriptor(window, 'location').set;
-Object.defineProperty(window, 'location', {{
-    set: function(value) {{
-        if (typeof value === 'string' && value.startsWith('/') && !value.startsWith('/{service}/')) {{
-            value = '/{service}' + value;
-        }}
-        originalLocationSetter.call(this, value);
-    }},
-    get: function() {{ return window.location; }}
-}});
-// Override window.location.href setter
-const locationProto = Object.getPrototypeOf(window.location);
-const originalHrefSetter = Object.getOwnPropertyDescriptor(locationProto, 'href').set;
-Object.defineProperty(locationProto, 'href', {{
-    set: function(value) {{
-        if (typeof value === 'string' && value.startsWith('/') && !value.startsWith('/{service}/')) {{
-            value = '/{service}' + value;
-        }}
-        originalHrefSetter.call(this, value);
-    }}
-}});
-</script>'''
-    
-    # Inject right after <head> or at start of <body>
-    if '<head>' in content:
-        content = content.replace('<head>', f'<head>{base_script}', 1)
-    elif '<body>' in content:
-        content = content.replace('<body>', f'<body>{base_script}', 1)
-    else:
-        content = base_script + content
-    
-    return content
-
-
 def rewrite_content(content, service):
     """Rewrite URLs in content to include service prefix."""
     
-    # Fix href/src/action attributes
+    # Fix href/src/action - match "/" exactly or "/something"
     content = re.sub(
-        r'(href|src|action)="(/(?!' + re.escape(service) + r'/)[^"]+)"',
+        r'(href|src|action)="(/)(?!' + re.escape(service) + r'/)',
+        rf'\1="/{service}/',
+        content
+    )
+    content = re.sub(
+        r'(href|src|action)="(/(?!' + re.escape(service) + r'/)[^"]*)"',
         rf'\1="/{service}\2"',
+        content
+    )
+    
+    # Fix single quotes too
+    content = re.sub(
+        r"(href|src|action)='(/)(?!" + re.escape(service) + r"/)",
+        rf"\1='/{service}/",
+        content
+    )
+    content = re.sub(
+        r"(href|src|action)='(/(?!" + re.escape(service) + r"/)[^']*)'",
+        rf"\1='/{service}\2'",
         content
     )
     
     # Fix fetch() calls
     content = re.sub(
-        r'fetch\s*\(\s*["\'](/(?!' + re.escape(service) + r'/)[^"\']+)["\']',
-        rf'fetch("/{service}\1"',
+        r'fetch\s*\(\s*["\']/((?!' + re.escape(service) + r'/)[^"\']*)["\']',
+        rf'fetch("/{service}/\1"',
         content
     )
     
-    # Fix JSON paths
+    # Fix window.location assignments
     content = re.sub(
-        r'"(/(?!' + re.escape(service) + r'/)[a-zA-Z0-9/_-]+)"',
-        rf'"/{service}\1"',
+        r'window\.location\s*=\s*["\']/((?!' + re.escape(service) + r'/)[^"\']*)["\']',
+        rf'window.location="/{service}/\1"',
+        content
+    )
+    content = re.sub(
+        r'window\.location\.href\s*=\s*["\']/((?!' + re.escape(service) + r'/)[^"\']*)["\']',
+        rf'window.location.href="/{service}/\1"',
+        content
+    )
+    
+    # Fix JSON paths (like in API responses)
+    content = re.sub(
+        r'"/((?!' + re.escape(service) + r'/)[a-zA-Z0-9/_-]+)"',
+        rf'"/{service}/\1"',
         content
     )
     
