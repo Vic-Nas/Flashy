@@ -1,11 +1,10 @@
 from django.http import HttpResponse, JsonResponse, HttpResponseRedirect
 from django.views.decorators.csrf import csrf_exempt
+from django.template import loader
 import requests
 import re
-import gzip
-import zlib
 import sys
-from config import SERVICES, TARGET_DOMAIN_PATTERN, BLOCKED_SERVICES, DEBUG
+from config import SERVICES, TARGET_DOMAIN_PATTERN, BLOCKED_SERVICES, DEBUG, COFFEE_USERNAME, SHOW_COFFEE
 
 
 def log(msg):
@@ -14,63 +13,40 @@ def log(msg):
     sys.stdout.flush()
 
 
-def unknown_service_page(service):
+def render_template(template_name, context):
+    """Simple template rendering."""
+    template = loader.get_template(template_name)
+    return template.render(context)
+
+
+def service_not_found(service, reason=None):
     """Show friendly 404 page when service doesn't exist."""
-    html = f"""<!DOCTYPE html>
-<html>
-<head>
-  <title>Service Not Found</title>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <style>
-    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 600px; margin: 50px auto; color: #666; background: #fafafa; }}
-    .container {{ background: white; padding: 40px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }}
-    h1 {{ color: #ff6b6b; margin-top: 0; }}
-    .service-name {{ font-family: monospace; color: #0066cc; font-size: 1.1em; }}
-    a {{ color: #0066cc; text-decoration: none; }}
-    .home-link {{ margin-top: 30px; }}
-    .home-link a {{ display: inline-block; background: #0066cc; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; }}
-  </style>
-</head>
-<body>
-<div class="container">
-  <h1>⚠️ Service Not Found</h1>
-  <p>The service <span class="service-name">{service}</span> doesn't exist.</p>
-  <p>Make sure <code>SERVICE_{service}=your-domain.com</code> is set in your environment.</p>
-  <div class="home-link"><a href="/">← Back to Home</a></div>
-</div>
-</body></html>"""
+    html = render_template('404.html', {
+        'service': service,
+        'reason': reason,
+        'show_coffee': SHOW_COFFEE,
+        'coffee_username': COFFEE_USERNAME,
+    })
     return HttpResponse(html, status=404)
+
+
+def error_page(title, message, error_type, service=None, target=None, status=502):
+    """Show error page for backend issues."""
+    html = render_template('error.html', {
+        'title': title,
+        'message': message,
+        'error_type': error_type,
+        'service': service,
+        'target': target,
+        'show_coffee': SHOW_COFFEE,
+        'coffee_username': COFFEE_USERNAME,
+    })
+    return HttpResponse(html, status=status)
 
 
 def home(request):
     """Show available services on homepage."""
-    html = """<!DOCTYPE html>
-<html>
-<head>
-  <title>Reverse Proxy</title>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 600px; margin: 50px auto; color: #333; }
-    h1 { color: #0066cc; }
-    .services { background: #f5f5f5; padding: 15px; border-radius: 8px; }
-    .services ul { list-style: none; padding: 0; }
-    .services li { padding: 8px 0; }
-    .services a { color: #0066cc; text-decoration: none; }
-  </style>
-</head>
-<body>
-<h1>🔄 Proxy Active</h1>
-<p>Usage: <code>/{service}/{path}</code></p>
-"""
-    if SERVICES:
-        html += '<div class="services"><p>Services:</p><ul>'
-        for service, domain in SERVICES.items():
-            html += f'<li><a href="/{service}/">{service}</a> → {domain}</li>\n'
-        html += "</ul></div>"
-    
-    html += "</body></html>"
+    html = render_template('home.html', {'services': SERVICES})
     return HttpResponse(html)
 
 
@@ -90,10 +66,25 @@ def proxy_view(request, service, path=''):
         # Test if service exists
         try:
             test_resp = requests.get(f'https://{target_domain}/', timeout=5, allow_redirects=True)
-            if test_resp.status_code == 404 or ('Railway' in test_resp.text and 'not found' in test_resp.text.lower()):
-                return unknown_service_page(service)
-        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout, requests.exceptions.RequestException):
-            return unknown_service_page(service)
+            
+            # Check for various 404 indicators
+            if test_resp.status_code == 404:
+                return service_not_found(service, "Service returned 404")
+            
+            # Check for Railway's "not found" page
+            if 'Railway' in test_resp.text and 'not found' in test_resp.text.lower():
+                return service_not_found(service, "Railway service not found")
+            
+            # Check for GitHub's "404 - Page not found"
+            if 'github' in target_domain.lower() and '404' in test_resp.text and 'not found' in test_resp.text.lower():
+                return service_not_found(service, "GitHub page does not exist")
+                
+        except requests.exceptions.ConnectionError:
+            return service_not_found(service, "Cannot connect to target")
+        except requests.exceptions.Timeout:
+            return service_not_found(service, "Connection timeout")
+        except requests.exceptions.RequestException as e:
+            return service_not_found(service, f"Request failed: {str(e)}")
     
     # Ensure trailing slash for service root
     if not path or path == '/':
@@ -140,21 +131,12 @@ def proxy_view(request, service, path=''):
             timeout=30
         )
         
-        # Decompress if needed
+        # Handle 404s from backend
+        if resp.status_code == 404:
+            return service_not_found(service, f"Backend returned 404 for: /{path}")
+        
+        # Get content (no decompression needed - requests handles it)
         content = resp.content
-        encoding = resp.headers.get('content-encoding', '').lower()
-        
-        if encoding == 'gzip':
-            try:
-                content = gzip.decompress(content)
-            except Exception as e:
-                log(f"[WARNING] Gzip decompression failed: {e}")
-        elif encoding == 'deflate':
-            try:
-                content = zlib.decompress(content)
-            except Exception as e:
-                log(f"[WARNING] Deflate decompression failed: {e}")
-        
         content_type = resp.headers.get('content-type', '')
         
         # Rewrite text content (HTML, JS, JSON, CSS)
@@ -174,7 +156,7 @@ def proxy_view(request, service, path=''):
             log(f"[REWRITE]   Contains pathname reads: {has_pathname}")
             log(f"[REWRITE]   Contains API calls: {has_api}")
             
-            text_content = rewrite_content(text_content, service)
+            text_content = rewrite_content(text_content, service, target_domain)
             
             if len(text_content) != original_len:
                 log(f"[REWRITE]   ✓ Modified ({original_len} → {len(text_content)} bytes)")
@@ -214,21 +196,43 @@ def proxy_view(request, service, path=''):
         return response
         
     except requests.exceptions.Timeout:
-        return JsonResponse({'error': 'Backend timeout'}, status=504)
+        return error_page(
+            '⏱️ Backend Timeout',
+            'The backend service took too long to respond.',
+            'HTTP 504 Gateway Timeout',
+            service=service,
+            target=target_domain,
+            status=504
+        )
     except requests.exceptions.ConnectionError:
-        return JsonResponse({'error': 'Cannot connect to backend'}, status=502)
+        return error_page(
+            '🔌 Connection Failed',
+            'Could not connect to the backend service. The service may be down or unreachable.',
+            'HTTP 502 Bad Gateway',
+            service=service,
+            target=target_domain,
+            status=502
+        )
     except Exception as e:
         log(f"[ERROR] {e}")
-        return JsonResponse({'error': str(e)}, status=502)
+        return error_page(
+            '❌ Proxy Error',
+            f'An unexpected error occurred while proxying the request.',
+            f'Error: {str(e)}',
+            service=service,
+            target=target_domain,
+            status=502
+        )
 
 
-def rewrite_content(content, service):
+def rewrite_content(content, service, target_domain):
     """
     Rewrite URLs in HTML/JS/CSS to work behind the proxy.
     
     Key rewrites:
     1. window.location.pathname → strips /service/ prefix so apps see clean paths
     2. Relative URLs (/path) → adds /service/ prefix so they route through proxy
+    3. Base tag → adds /service/ prefix to base href
     """
     
     # Rewrite pathname reads to hide the /service/ prefix from JavaScript
@@ -250,22 +254,69 @@ def rewrite_content(content, service):
         content
     )
     
-    # Helper: check if URL is inside an absolute URL (don't rewrite those)
-    def is_safe(match):
-        start = max(0, match.start() - 20)
-        end = min(len(content), match.end() + 20)
+    # Rewrite <base> tag if present
+    content = re.sub(
+        r'<base\s+href="/"',
+        f'<base href="/{service}/"',
+        content,
+        flags=re.IGNORECASE
+    )
+    
+    # Helper: check if URL is absolute (don't rewrite those)
+    def is_absolute(url):
+        return bool(re.match(r'^https?://', url)) or '//' in url
+    
+    # Helper: check if we should skip rewriting this URL
+    def should_skip(match, url):
+        # Skip absolute URLs
+        if is_absolute(url):
+            return True
+        
+        # Check surrounding context for API calls or external references
+        start = max(0, match.start() - 30)
+        end = min(len(content), match.end() + 30)
         context = content[start:end]
-        return not any(x in context for x in ['://', '.com', '.io', '.org', '.net', 'api.'])
+        
+        # Skip if it looks like an API call or external URL reference
+        skip_patterns = ['api.', '://', '.com/', '.io/', '.org/', '.net/', 'http']
+        return any(pattern in context for pattern in skip_patterns)
     
     # Rewrite helper: add /service/ prefix to relative URLs
-    def rewrite(match, quote='"'):
-        return match.group(1) + quote + f'/{service}' + match.group(2) + quote if is_safe(match) else match.group(0)
+    def rewrite_url(match):
+        attr = match.group(1)
+        quote = match.group(2)
+        url = match.group(3)
+        
+        # Skip if already has service prefix
+        if url.startswith(f'/{service}/'):
+            return match.group(0)
+        
+        # Skip if should not be rewritten
+        if should_skip(match, url):
+            return match.group(0)
+        
+        # Add service prefix
+        return f'{attr}{quote}/{service}{url}{quote}'
     
-    # Rewrite href/src/action attributes (but not absolute URLs)
-    content = re.sub(r'((?:href|src|action)=")(/[a-zA-Z][^"]*)"', lambda m: rewrite(m, '"'), content)
-    content = re.sub(r"((?:href|src|action)=')(/[a-zA-Z][^']*)'", lambda m: rewrite(m, "'"), content)
+    # Rewrite href/src/action attributes (only relative URLs starting with /)
+    content = re.sub(
+        r'((?:href|src|action)=)(["\'`])(/(?!/).[^"\'`]*)\2',
+        rewrite_url,
+        content
+    )
     
-    # Rewrite fetch() calls (but not absolute URLs)
-    content = re.sub(r'(fetch\s*\(\s*")(/[a-zA-Z][^"]*)"', lambda m: rewrite(m, '"'), content)
+    # Rewrite fetch() and similar API calls (only relative URLs)
+    content = re.sub(
+        r'(fetch\s*\(\s*)(["\'`])(/(?!/).[^"\'`]*)\2',
+        rewrite_url,
+        content
+    )
+    
+    # Rewrite location assignments like location.href = "/path"
+    content = re.sub(
+        r'(location\.href\s*=\s*)(["\'`])(/(?!/).[^"\'`]*)\2',
+        rewrite_url,
+        content
+    )
     
     return content

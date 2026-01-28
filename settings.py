@@ -15,6 +15,18 @@ MIDDLEWARE = [
 ROOT_URLCONF = 'urls'
 DATABASES = {}
 
+# Templates configuration
+TEMPLATES = [
+    {
+        'BACKEND': 'django.template.backends.django.DjangoTemplates',
+        'DIRS': [os.path.join(os.path.dirname(__file__), 'templates')],
+        'APP_DIRS': False,
+        'OPTIONS': {
+            'context_processors': [],
+        },
+    },
+]
+
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 SECURE_SSL_REDIRECT = True
 SESSION_COOKIE_SECURE = True

@@ -7,11 +7,12 @@ Route multiple services through a single domain using URL paths instead of subdo
 ✨ **One DNS record** - One domain, many services  
 🚀 **Path routing** - `yourdomain.com/app/` instead of `app.yourdomain.com`  
 🛡️ **Transparent** - JavaScript apps work without modification  
+🎨 **Clean error pages** - Friendly 404s with optional coffee button
 
 ## Quick Start
 
 ```bash
-# 1. Set environment
+# 1. Set environment variables
 SERVICE_dev=vicnasdev.github.io
 SERVICE_api=api.example.com
 SECRET_KEY=your-secret-key
@@ -30,11 +31,29 @@ The proxy rewrites content to be transparent:
 - **JavaScript** - `window.location.pathname` sees clean paths (no `/service/` prefix)
 - **Links/Assets** - Relative URLs get `/service/` prefix to route through proxy
 - **API calls** - Absolute URLs left untouched
+- **Base tags** - Automatically rewritten to include service prefix
+
+### Debug Mode
+Set `DEBUG=true` to:
+- Disable caching for easier testing
+- See detailed rewrite logs
+- Get more verbose error messages
+
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SERVICE_*` | - | Service mappings (e.g., `SERVICE_dev=example.com`) |
+| `SECRET_KEY` | `change-me-in-production` | Django secret key |
+| `DEBUG` | `false` | Enable debug mode (disables caching) |
+| `ALLOWED_HOSTS` | `*` | Comma-separated list of allowed hosts |
+| `COFFEE_USERNAME` | `vicnas` | Buy Me a Coffee username |
+| `COFFEE` | `true` | Show coffee button on error pages |
 
 ## Troubleshooting
 
-- **Not working?** Hard refresh (Ctrl+Shift+R) to clear cache
-- **Debugging?** Set `DEBUG=True` to disable caching and see detailed logs
+- **Debugging?** Set `DEBUG=true` to disable caching and see detailed logs
+- **Still broken?** Check the logs for `[REWRITE]` messages to see what's being changed
 
 ## Contributing
 
