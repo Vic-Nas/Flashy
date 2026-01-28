@@ -38,6 +38,18 @@
       font-size: 0.85em;
     }
     
+    .debug-notice {
+      display: inline-block;
+      margin-left: 10px;
+      padding: 2px 8px;
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      color: #856404;
+      border-radius: 4px;
+      font-size: 0.75em;
+      font-weight: 500;
+    }
+    
     .container {
       background: white;
       padding: 40px;
@@ -176,7 +188,12 @@
   <div class="header">
     <h1>⚡ {{ app_name }}</h1>
     <div class="tagline">Path-based reverse proxy</div>
-    <div class="version">v{{ version }}</div>
+    <div class="version">
+      v{{ version }}
+      {% if debug %}
+      <span class="debug-notice">DEBUG=True (too slow? set to False)</span>
+      {% endif %}
+    </div>
   </div>
   
   {% if services %}

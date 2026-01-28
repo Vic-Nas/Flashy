@@ -1,6 +1,6 @@
 """Homepage rendering."""
 from django.http import HttpResponse
-from config import SERVICES, SERVICE_BASE_PATHS, SERVICE_DESCRIPTIONS, SERVICE_RANKS, SHOW_COFFEE, COFFEE_USERNAME
+from config import SERVICES, SERVICE_BASE_PATHS, SERVICE_DESCRIPTIONS, SERVICE_RANKS, SHOW_COFFEE, COFFEE_USERNAME, DEBUG
 from utils.templates import render_template
 
 
@@ -38,6 +38,7 @@ def render_home(app_name, version):
         'services': build_services_list(),
         'version': version,
         'app_name': app_name,
+        'debug': DEBUG,
         'show_coffee': SHOW_COFFEE,
         'coffee_username': COFFEE_USERNAME,
     })
