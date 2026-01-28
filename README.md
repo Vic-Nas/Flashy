@@ -8,20 +8,23 @@ Path-based reverse proxy - route multiple services through one domain.
 
 ## Quick Start
 
+### Railway (Recommended)
+
+Set environment variables and deploy:
 ```bash
-# 1. Set your services
 SECRET_KEY=your-secret-key
 SERVICE_dev=vicnasdev.github.io
 SERVICE_api=api.example.com
-
-# 2. Deploy to Railway (includes free credits)
 ```
-[Deploy to Railway](https://railway.com?referralCode=ZIdvo-)
-- Fork & deploy or
-- Clone & railway up
+
+[Fork and Deploy to Railway](https://railway.com?referralCode=ZIdvo-) (free credits included)
+
+### Self-Hosted Docker
 
 ```bash
-# 3. Point DNS: yourdomain.com → your-proxy
+docker run -e SECRET_KEY=your-secret-key \
+  -e SERVICE_dev=vicnasdev.github.io \
+  -p 8000:8000 ghcr.io/vicnasdev/flashy
 ```
 
 **Usage:** `yourdomain.com/dev/` → `vicnasdev.github.io/`
@@ -45,13 +48,6 @@ The proxy rewrites URLs so JavaScript apps work transparently:
 | **Self-Hosted** | 🟢 Easy (Docker) | 🟢 Yes | 🟢 Yes | 🔴 No |
 | **Dynamic Services** | 🟢 Add anytime | 🔴 Restart needed | 🟡 Reload | 🟢 Dynamic |
 
-**Why choose Flashy?**
-- **Works with SPA frameworks** (React, Vue, Svelte) without code changes
-- **Path-based routing without breaking apps** (Nginx/Caddy require complex regex)
-- **Zero DevOps overhead** - just set environment variables
-- **Faster deployment** than traditional reverse proxies
-- **Cheaper** than Cloudflare for small projects
-- **Open source & fully customizable**
 
 ## Environment Variables
 
