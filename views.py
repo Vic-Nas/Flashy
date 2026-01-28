@@ -135,7 +135,7 @@ def home(request):
             pass
     
     html = render_template('home.html', {
-        'services': {k: v for k, v in SERVICES.items() if v != 'internal-logs'},
+        'services': SERVICES,
         'version': __version__,
         'app_name': app_name,
         'show_fixes': SHOW_FIXES,
