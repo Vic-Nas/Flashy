@@ -188,40 +188,50 @@ def proxy_view(request, service, path=''):
         
         content_type = resp.headers.get('content-type', '')
         
-        if 'text/html' in content_type:
+        # Rewrite HTML and JS/JSON (unless it has API calls)
+        if 'text/html' in content_type or 'javascript' in content_type or 'application/json' in content_type:
             text_content = content.decode('utf-8', errors='ignore')
             
-            # Inject script to make proxy transparent to JavaScript
-            proxy_script = f"""
-<script>
+            # For HTML, inject transparency script
+            if 'text/html' in content_type:
+                proxy_script = f"""<script>
 (function() {{
-    const servicePath = '/{service}/';
-    const originalPathname = window.location.pathname;
+    const prefix = '/{service}/';
+    const strip = p => p?.startsWith(prefix) ? p.substring(prefix.length - 1) || '/' : p;
     
-    // Override pathname to remove service prefix
-    Object.defineProperty(window.location, 'pathname', {{
-        get: function() {{
-            if (originalPathname.startsWith(servicePath)) {{
-                return originalPathname.substring(servicePath.length - 1) || '/';
-            }}
-            return originalPathname;
-        }},
+    // Make pathname return path without service prefix
+    const origPath = location.pathname;
+    Object.defineProperty(location, 'pathname', {{
+        get: () => strip(origPath),
         configurable: true
     }});
+    Object.defineProperty(document.location, 'pathname', {{
+        get: () => strip(origPath),
+        configurable: true
+    }});
+    
+    // Auto-add prefix when using history API
+    const addPrefix = url => typeof url === 'string' && url.startsWith('/') && !url.startsWith(prefix) ? prefix.slice(0, -1) + url : url;
+    const origPush = history.pushState;
+    const origReplace = history.replaceState;
+    history.pushState = (s, t, u) => origPush.call(history, s, t, addPrefix(u));
+    history.replaceState = (s, t, u) => origReplace.call(history, s, t, addPrefix(u));
 }})();
-</script>
-"""
-            # Inject before </head> or at start of <body> or at start of HTML
-            if '<head>' in text_content:
-                text_content = text_content.replace('<head>', '<head>' + proxy_script, 1)
-            elif '<body>' in text_content:
-                text_content = text_content.replace('<body>', '<body>' + proxy_script, 1)
-            elif '<html>' in text_content:
-                text_content = text_content.replace('<html>', '<html>' + proxy_script, 1)
-            else:
-                text_content = proxy_script + text_content
+</script>"""
+                # Inject before </head> or at start of <body> or at start of HTML
+                if '<head>' in text_content:
+                    text_content = text_content.replace('<head>', '<head>' + proxy_script, 1)
+                elif '<body>' in text_content:
+                    text_content = text_content.replace('<body>', '<body>' + proxy_script, 1)
+                elif '<html>' in text_content:
+                    text_content = text_content.replace('<html>', '<html>' + proxy_script, 1)
+                else:
+                    text_content = proxy_script + text_content
             
-            text_content = rewrite_content(text_content, service)
+            # Skip rewriting JS/JSON that contains external API calls
+            if 'text/html' in content_type or ('api.' not in text_content and '://api' not in text_content):
+                text_content = rewrite_content(text_content, service)
+            
             response = HttpResponse(text_content, status=resp.status_code)
         elif 'javascript' in content_type or 'application/json' in content_type:
             text_content = content.decode('utf-8', errors='ignore')
@@ -263,54 +273,23 @@ def proxy_view(request, service, path=''):
 
 
 def rewrite_content(content, service):
-    """Rewrite URLs in content to include service prefix.
+    """Rewrite relative URLs to include service prefix."""
     
-    Only rewrites paths like /path/to/resource. Never touches domains or absolute URLs.
-    """
-    
-    # Ultra-safe check: skip if context contains any domain-like pattern
-    def safe_rewrite(match):
-        full_match = match.group(0)
-        # Get surrounding context
+    def is_safe(match):
+        """Check if match is inside an absolute URL."""
         start = max(0, match.start() - 20)
         end = min(len(content), match.end() + 20)
         context = content[start:end]
-        
-        # Skip if context looks like it contains a domain or protocol
-        if any(x in context for x in ['http://', 'https://', '://', '.com', '.io', '.org', '.net', 'api.']):
-            return full_match
-        
-        return match.group(1) + '"/' + service + match.group(2) + '"'
+        return not any(x in context for x in ['://', '.com', '.io', '.org', '.net', 'api.'])
     
-    def safe_rewrite_single(match):
-        full_match = match.group(0)
-        start = max(0, match.start() - 20)
-        end = min(len(content), match.end() + 20)
-        context = content[start:end]
-        
-        if any(x in context for x in ['http://', 'https://', '://', '.com', '.io', '.org', '.net', 'api.']):
-            return full_match
-        
-        return match.group(1) + "'/" + service + match.group(2) + "'"
+    def rewrite(match, quote='"'):
+        return match.group(1) + quote + f'/{service}' + match.group(2) + quote if is_safe(match) else match.group(0)
     
-    # Only rewrite obvious relative paths in attributes
-    content = re.sub(
-        r'((?:href|src|action)=")(/[a-zA-Z][^"]*)"',
-        safe_rewrite,
-        content
-    )
+    # Rewrite href/src/action attributes
+    content = re.sub(r'((?:href|src|action)=")(/[a-zA-Z][^"]*)"', lambda m: rewrite(m, '"'), content)
+    content = re.sub(r"((?:href|src|action)=')(/[a-zA-Z][^']*)'", lambda m: rewrite(m, "'"), content)
     
-    content = re.sub(
-        r"((?:href|src|action)=')(/[a-zA-Z][^']*)'",
-        safe_rewrite_single,
-        content
-    )
-    
-    # Only rewrite fetch calls with simple relative paths
-    content = re.sub(
-        r'(fetch\s*\(\s*")(/[a-zA-Z][^"]*)"',
-        safe_rewrite,
-        content
-    )
+    # Rewrite fetch calls
+    content = re.sub(r'(fetch\s*\(\s*")(/[a-zA-Z][^"]*)"', lambda m: rewrite(m, '"'), content)
     
     return content
