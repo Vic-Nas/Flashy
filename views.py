@@ -6,7 +6,10 @@ import re
 import sys
 import os
 from collections import deque
-from config import SERVICES, SERVICE_BASE_PATHS, BLOCKED_SERVICES, DEBUG, COFFEE_USERNAME, SHOW_COFFEE, ENABLE_LOGS, SHOW_FIXES
+from config import (SERVICES, SERVICE_BASE_PATHS, SERVICE_DESCRIPTIONS, 
+SERVICE_RANKS, BLOCKED_SERVICES, DEBUG, COFFEE_USERNAME, SHOW_COFFEE, 
+ENABLE_LOGS, SHOW_FIXES)
+
 # Import version info
 try:
     from version import __name__ as app_name
@@ -111,7 +114,6 @@ def home(request):
     """Show available services on homepage."""
     
     # Get latest changelog if FIXES=true
-    # Get latest changelog if FIXES=true
     latest_fixes = None
     if SHOW_FIXES:
         try:
@@ -120,15 +122,27 @@ def home(request):
                 latest_fixes = f.read()
         except:
             pass
-        
-    # Combine domain + base path for display
-    services_display = {}
+    
+    # Combine domain + base path + description for display, sorted by rank
+    services_list = []
     for service, domain in SERVICES.items():
         base_path = SERVICE_BASE_PATHS.get(service, '')
-        services_display[service] = domain + base_path
-
+        full_target = domain + base_path
+        description = SERVICE_DESCRIPTIONS.get(service, '')
+        rank = SERVICE_RANKS.get(service, 999)
+        
+        services_list.append({
+            'name': service,
+            'target': full_target,
+            'description': description,
+            'rank': rank
+        })
+    
+    # Sort by rank (lower number = higher priority)
+    services_list.sort(key=lambda x: x['rank'])
+    
     html = render_template('home.html', {
-        'services': services_display,
+        'services': services_list,
         'version': __version__,
         'app_name': app_name,
         'show_fixes': SHOW_FIXES,

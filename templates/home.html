@@ -116,17 +116,20 @@
   <div class="usage">/{service}/{path}</div>
   
   {% if services %}
-  <div class="services">
-    <h2>📍 Available Services</h2>
-    <ul>
-      {% for service, domain in services.items %}
-      <li>
-        <a href="/{{ service }}/">{{ service }}</a>
-        <span class="service-target">→ {{ domain }}</span>
-      </li>
-      {% endfor %}
-    </ul>
-  </div>
+    <div class="services">
+      <h2>📍 Available Services</h2>
+      <ul>
+        {% for service in services %}
+        <li>
+          <a href="/{{ service.name }}/">{{ service.name }}</a>
+          <span class="service-target">→ {{ service.target }}</span>
+          {% if service.description %}
+          <div style="color: #666; font-size: 0.85em; margin-top: 4px;">{{ service.description }}</div>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
   {% endif %}
   
   {% if show_fixes and latest_fixes %}
