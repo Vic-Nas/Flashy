@@ -56,6 +56,14 @@
     .btn-primary:hover {
       background: #0052a3;
     }
+    .btn-secondary {
+      background: #f5f5f5;
+      color: #333;
+      border: 1px solid #ddd;
+    }
+    .btn-secondary:hover {
+      background: #e0e0e0;
+    }
     .coffee-btn {
       background: #FFDD00;
       color: #000;
@@ -80,6 +88,9 @@
     {% endif %}
     
     <div class="actions">
+      {% if service %}
+      <a href="/{{ service }}/" class="btn btn-secondary">Try /{{ service }}/ homepage</a>
+      {% endif %}
       <a href="/" class="btn btn-primary">← Back to Home</a>
       {% if show_coffee and coffee_username %}
       <a href="https://buymeacoffee.com/{{ coffee_username }}" target="_blank" class="btn coffee-btn">☕ Buy Me a Coffee</a>

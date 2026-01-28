@@ -36,6 +36,20 @@ def service_not_found(service, reason=None):
     return HttpResponse(html, status=404)
 
 
+def path_not_found(service, path, target_domain):
+    """Show 404 page when service exists but path doesn't."""
+    html = render_template('error.html', {
+        'title': '404 - Path Not Found',
+        'message': f'The service "{service}" exists, but this path was not found on the backend.',
+        'error_type': 'HTTP 404 Not Found',
+        'service': service,
+        'target': target_domain,
+        'show_coffee': SHOW_COFFEE,
+        'coffee_username': COFFEE_USERNAME,
+    })
+    return HttpResponse(html, status=404)
+
+
 def error_page(title, message, error_type, service=None, target=None, status=502):
     """Show error page for backend issues."""
     html = render_template('error.html', {
@@ -123,8 +137,8 @@ def proxy_view(request, service, path=''):
             # This prevents MIME type errors when browsers try to execute our HTML as JS/CSS
             if any(path.endswith(ext) for ext in ['.js', '.css', '.svg', '.ico', '.png', '.jpg', '.jpeg', '.gif', '.woff', '.woff2', '.ttf', '.eot', '.otf', '.webp']):
                 return HttpResponse(resp.content, status=404, content_type=resp.headers.get('content-type', 'text/plain'))
-            # For HTML pages, show our friendly error page
-            return service_not_found(service, f"Backend returned 404 for: /{path}")
+            # For HTML pages, show path not found (service exists, but this path doesn't)
+            return path_not_found(service, path, target_domain)
         
         # Get content (no decompression needed - requests handles it)
         content = resp.content
