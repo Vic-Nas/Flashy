@@ -33,6 +33,26 @@ The proxy rewrites URLs so JavaScript apps work transparently:
 - Relative URLs get `/service/` prefix automatically
 - Absolute URLs (APIs, CDNs) stay untouched
 
+## Comparison with Other Solutions
+
+| Feature | Flashy | Nginx | Caddy | Cloudflare |
+|---------|--------|-------|-------|-----------|
+| **Setup Complexity** | 🟢 2 min | 🟠 30 min | 🟢 10 min | 🟠 15 min |
+| **URL Rewriting** | 🟢 Automatic | 🔴 Manual regex | 🟠 Manual | 🟠 Limited |
+| **JavaScript Apps** | 🟢 Transparent | 🔴 Breaks paths | 🔴 Breaks paths | 🟡 Partial |
+| **Deploy Cost** | 🟢 Free (Railway) | 🟠 $5+/mo | 🟠 $5+/mo | 🟠 $20+/mo |
+| **Configuration** | 🟢 Env vars | 🔴 Complex .conf | 🟢 Simple | 🟠 UI-based |
+| **Self-Hosted** | 🟢 Easy (Docker) | 🟢 Yes | 🟢 Yes | 🔴 No |
+| **Dynamic Services** | 🟢 Add anytime | 🔴 Restart needed | 🟡 Reload | 🟢 Dynamic |
+
+**Why choose Flashy?**
+- **Works with SPA frameworks** (React, Vue, Svelte) without code changes
+- **Path-based routing without breaking apps** (Nginx/Caddy require complex regex)
+- **Zero DevOps overhead** - just set environment variables
+- **Faster deployment** than traditional reverse proxies
+- **Cheaper** than Cloudflare for small projects
+- **Open source & fully customizable**
+
 ## Environment Variables
 
 | Variable | Default | Description |
