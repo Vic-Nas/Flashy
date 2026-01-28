@@ -5,70 +5,7 @@ Run with: python test.py
 """
 
 import unittest
-import re
-
-
-def rewrite_content(content, service, target_domain):
-    """Rewrite URLs - extracted from views.py for standalone testing."""
-    
-    # Rewrite pathname reads
-    content = re.sub(
-        r'(?<!document\.)window\.location\.pathname\b',
-        f'(window.location.pathname.replace(/^\\/{service}\\//, "/"))',
-        content
-    )
-    content = re.sub(
-        r'(?<!window\.)(?<!document\.)location\.pathname\b',
-        f'(location.pathname.replace(/^\\/{service}\\//, "/"))',
-        content
-    )
-    
-    # Rewrite <base> tag
-    content = re.sub(
-        r'<base\s+href="/"',
-        f'<base href="/{service}/"',
-        content,
-        flags=re.IGNORECASE
-    )
-    
-    def is_absolute(url):
-        return bool(re.match(r'^https?://', url)) or '//' in url or url.startswith('data:')
-    
-    def rewrite_url(match):
-        attr = match.group(1)
-        quote = match.group(2)
-        url = match.group(3)
-        
-        if url.startswith(f'/{service}/'):
-            return match.group(0)
-        
-        if is_absolute(url):
-            return match.group(0)
-        
-        return f'{attr}{quote}/{service}{url}{quote}'
-    
-    # Rewrite attributes
-    content = re.sub(
-        r'((?:href|src|action)=)(["\'`])(/(?!/).[^"\'`]*)\2',
-        rewrite_url,
-        content
-    )
-    
-    # Rewrite fetch() calls
-    content = re.sub(
-        r'(fetch\s*\(\s*)(["\'`])(/(?!/).[^"\'`]*)\2',
-        rewrite_url,
-        content
-    )
-    
-    # Rewrite location.href
-    content = re.sub(
-        r'(location\.href\s*=\s*)(["\'`])(/(?!/).[^"\'`]*)\2',
-        rewrite_url,
-        content
-    )
-    
-    return content
+from views import rewrite_content
 
 
 class TestURLRewriting(unittest.TestCase):
@@ -91,6 +28,36 @@ class TestURLRewriting(unittest.TestCase):
     def test_no_double_prefix(self):
         html = '<a href="/myapp/about">About</a>'
         result = rewrite_content(html, 'myapp', 'example.com')
+        self.assertEqual(html, result)
+        
+    def test_pathname_reads_get_stripped(self):
+        """JavaScript reads window.location.pathname without /service/ prefix"""
+        js = 'if (window.location.pathname === "/about") { }'
+        result = rewrite_content(js, 'app', 'example.com')
+        self.assertIn('pathname.replace(/^\\/app\\//, "/")', result)
+
+    def test_fetch_calls_get_prefixed(self):
+        """fetch() with relative URLs get service prefix"""
+        js = 'fetch("/api/data")'
+        result = rewrite_content(js, 'app', 'example.com')
+        self.assertIn('fetch("/app/api/data")', result)
+
+    def test_base_tag_rewritten(self):
+        """<base href="/"> gets service prefix"""
+        html = '<base href="/">'
+        result = rewrite_content(html, 'app', 'example.com')
+        self.assertIn('<base href="/app/">', result)
+
+    def test_data_urls_untouched(self):
+        """data: URLs should not be modified"""
+        html = '<img src="data:image/png;base64,iVBORw0KGg==">'
+        result = rewrite_content(html, 'app', 'example.com')
+        self.assertEqual(html, result)
+
+    def test_protocol_relative_urls(self):
+        """//cdn.com URLs should not be modified"""
+        html = '<script src="//cdn.jsdelivr.net/lib.js"></script>'
+        result = rewrite_content(html, 'app', 'example.com')
         self.assertEqual(html, result)
 
 
