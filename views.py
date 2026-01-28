@@ -136,7 +136,7 @@ def home(request):
         'show_coffee': SHOW_COFFEE,
         'coffee_username': COFFEE_USERNAME,
     })
-    
+    return HttpResponse(html)
 
 def logs_view(request):
     """Show recent logs if LOGS=true."""
