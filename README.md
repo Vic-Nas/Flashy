@@ -10,9 +10,9 @@ Path-based reverse proxy - route multiple services through one domain.
 
 ```bash
 # 1. Set your services
+SECRET_KEY=your-secret-key
 SERVICE_dev=vicnasdev.github.io
 SERVICE_api=api.example.com
-SECRET_KEY=your-secret-key
 
 # 2. Deploy to Railway (includes free credits)
 ```
