@@ -93,3 +93,13 @@ jobs:
     - name: Already released
       if: steps.check_tag.outputs.exists == 'true'
       run: echo "ℹ️ Version v${{ steps.version.outputs.version }} already released"
+
+    - name: Update version.py
+      if: steps.check_tag.outputs.exists == 'false'
+      run: |
+        sed -i 's/__version__ = ".*"/__version__ = "${{ steps.version.outputs.version }}"/' version.py
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add version.py
+        git commit -m "chore: bump version to ${{ steps.version.outputs.version }}"
+        git push
