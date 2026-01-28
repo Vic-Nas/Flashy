@@ -251,13 +251,13 @@ def rewrite_content(content, service):
     
     # Rewrite window.location.pathname reads to strip service prefix
     content = re.sub(
-        r'window\.location\.pathname',
-        f'window.location.pathname.replace(/^\/{service}/, "")||"/"',
+        r'\bwindow\.location\.pathname\b',
+        f'(window.location.pathname.replace(/^\\/{service}\\//, "/"))',
         content
     )
     content = re.sub(
-        r'location\.pathname',
-        f'location.pathname.replace(/^\/{service}/, "")||"/"',
+        r'\blocation\.pathname\b',
+        f'(location.pathname.replace(/^\\/{service}\\//, "/"))',
         content
     )
     
