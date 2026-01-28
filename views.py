@@ -6,6 +6,12 @@ import re
 import sys
 from config import SERVICES, BLOCKED_SERVICES, DEBUG, COFFEE_USERNAME, SHOW_COFFEE
 
+# DEBUG mode does aggressive cache busting:
+# - Strips ALL cache headers (ETag, Cache-Control, Expires, Last-Modified, Age, Vary)
+# - Adds multiple no-cache directives (Cache-Control, Pragma, Expires, Surrogate-Control)
+# - Logs EVERY request including assets
+# - Forces browser/proxy revalidation on every request
+
 
 def log(msg):
     """Log to stdout immediately."""
@@ -75,8 +81,10 @@ def proxy_view(request, service, path=''):
     if request.META.get('QUERY_STRING'):
         url += f"?{request.META['QUERY_STRING']}"
     
-    # Log main requests (skip assets)
-    if not any(path.endswith(ext) for ext in ['.svg', '.ico', '.css', '.js', '.png', '.jpg', '.woff', '.woff2', '.ttf']):
+    # In DEBUG mode, log ALL requests. Otherwise skip assets to reduce noise
+    if DEBUG:
+        log(f"[PROXY] {request.method} /{service}/{path} → {url}")
+    elif not any(path.endswith(ext) for ext in ['.svg', '.ico', '.css', '.js', '.png', '.jpg', '.woff', '.woff2', '.ttf']):
         log(f"[PROXY] {request.method} /{service}/{path} → {url}")
     
     try:
@@ -156,15 +164,20 @@ def proxy_view(request, service, path=''):
                             value = f'/{service}{path or "/"}'
                         elif value.startswith('/'):
                             value = f'/{service}{value}'
-                # Strip caching headers in DEBUG mode for easier testing
-                elif DEBUG and key.lower() in ['etag', 'cache-control', 'expires', 'last-modified']:
+                # Strip ALL caching headers in DEBUG mode
+                elif DEBUG and key.lower() in ['etag', 'cache-control', 'expires', 'last-modified', 'age', 'vary']:
                     continue
                 response[key] = value
         
-        # Add no-cache headers in DEBUG mode
+        # Super aggressive cache busting in DEBUG mode
         if DEBUG:
-            response['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+            response['Cache-Control'] = 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0'
             response['Pragma'] = 'no-cache'
+            response['Expires'] = '0'
+            # Prevent all forms of caching
+            response['Surrogate-Control'] = 'no-store'
+            # Force revalidation
+            response['Vary'] = '*'
         
         # Handle cookies
         if 'Set-Cookie' in resp.headers:
@@ -242,22 +255,7 @@ def rewrite_content(content, service, target_domain):
     
     # Helper: check if URL is absolute (don't rewrite those)
     def is_absolute(url):
-        return bool(re.match(r'^https?://', url)) or '//' in url
-    
-    # Helper: check if we should skip rewriting this URL
-    def should_skip(match, url):
-        # Skip absolute URLs
-        if is_absolute(url):
-            return True
-        
-        # Check surrounding context for API calls or external references
-        start = max(0, match.start() - 30)
-        end = min(len(content), match.end() + 30)
-        context = content[start:end]
-        
-        # Skip if it looks like an API call or external URL reference
-        skip_patterns = ['api.', '://', '.com/', '.io/', '.org/', '.net/', 'http']
-        return any(pattern in context for pattern in skip_patterns)
+        return bool(re.match(r'^https?://', url)) or '//' in url or url.startswith('data:')
     
     # Rewrite helper: add /service/ prefix to relative URLs
     def rewrite_url(match):
@@ -269,11 +267,11 @@ def rewrite_content(content, service, target_domain):
         if url.startswith(f'/{service}/'):
             return match.group(0)
         
-        # Skip if should not be rewritten
-        if should_skip(match, url):
+        # Skip absolute URLs (http://, https://, //, data:)
+        if is_absolute(url):
             return match.group(0)
         
-        # Add service prefix
+        # Add service prefix to relative URLs
         return f'{attr}{quote}/{service}{url}{quote}'
     
     # Rewrite href/src/action attributes (only relative URLs starting with /)
