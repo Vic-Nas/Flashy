@@ -6,8 +6,7 @@ import re
 import sys
 import os
 from collections import deque
-from config import SERVICES, BLOCKED_SERVICES, DEBUG, COFFEE_USERNAME, SHOW_COFFEE, ENABLE_LOGS, SHOW_FIXES
-
+from config import SERVICES, SERVICE_BASE_PATHS, BLOCKED_SERVICES, DEBUG, COFFEE_USERNAME, SHOW_COFFEE, ENABLE_LOGS, SHOW_FIXES
 # Import version info
 try:
     from version import __name__ as app_name
@@ -242,6 +241,7 @@ def proxy_view(request, service, path=''):
         return service_not_found(service, "Service not configured")
     
     target_domain = SERVICES[service]
+    base_path = SERVICE_BASE_PATHS.get(service, '')
     
     # Ensure trailing slash for service root
     if not path or path == '/':
@@ -250,7 +250,7 @@ def proxy_view(request, service, path=''):
         path = ''
     
     # Build target URL
-    url = f"https://{target_domain}/{path}"
+    url = f"https://{target_domain}{base_path}/{path}"
     if request.META.get('QUERY_STRING'):
         url += f"?{request.META['QUERY_STRING']}"
     
