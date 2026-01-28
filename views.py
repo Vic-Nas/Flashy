@@ -119,6 +119,11 @@ def proxy_view(request, service, path=''):
         
         # Handle 404s from backend
         if resp.status_code == 404:
+            # For assets (.js, .css, images, etc.), pass through the 404 without our error page
+            # This prevents MIME type errors when browsers try to execute our HTML as JS/CSS
+            if any(path.endswith(ext) for ext in ['.js', '.css', '.svg', '.ico', '.png', '.jpg', '.jpeg', '.gif', '.woff', '.woff2', '.ttf', '.eot', '.otf', '.webp']):
+                return HttpResponse(resp.content, status=404, content_type=resp.headers.get('content-type', 'text/plain'))
+            # For HTML pages, show our friendly error page
             return service_not_found(service, f"Backend returned 404 for: /{path}")
         
         # Get content (no decompression needed - requests handles it)
