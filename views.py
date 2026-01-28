@@ -132,7 +132,8 @@ def proxy_view(request, service, path=''):
     if request.META.get('QUERY_STRING'):
         url += f"?{request.META['QUERY_STRING']}"
     
-    if not any(path.endswith(ext) for ext in ['.svg', '.ico', '.css', '.js', '.png', '.jpg']):
+    # Only log HTML/API requests, not assets
+    if not any(path.endswith(ext) for ext in ['.svg', '.ico', '.css', '.js', '.png', '.jpg', '.woff', '.woff2', '.ttf']):
         print(f"[PROXY] {request.method} /{service}/{path} → {url}")
     
     try:
@@ -190,9 +191,28 @@ def proxy_view(request, service, path=''):
         
         # Rewrite HTML and JS/JSON
         is_text = any(x in content_type.lower() for x in ['text/', 'javascript', 'json'])
+        
         if is_text:
+            print(f"[REWRITE] Processing {url}")
+            print(f"[REWRITE]   Content-Type: {content_type}")
+            
             text_content = content.decode('utf-8', errors='ignore')
+            original_len = len(text_content)
+            
+            # Check what we're about to rewrite
+            has_pathname = 'window.location.pathname' in text_content or 'location.pathname' in text_content
+            has_api = 'api.github.com' in text_content or 'api.' in text_content
+            
+            print(f"[REWRITE]   Contains pathname reads: {has_pathname}")
+            print(f"[REWRITE]   Contains API calls: {has_api}")
+            
             text_content = rewrite_content(text_content, service)
+            
+            if len(text_content) != original_len:
+                print(f"[REWRITE]   ✓ Modified ({original_len} → {len(text_content)} bytes)")
+            else:
+                print(f"[REWRITE]   No changes made")
+            
             response = HttpResponse(text_content, status=resp.status_code)
         elif 'javascript' in content_type or 'application/json' in content_type:
             text_content = content.decode('utf-8', errors='ignore')
@@ -237,6 +257,10 @@ def rewrite_content(content, service):
     """Rewrite relative URLs and pathname reads to work behind proxy."""
     
     # ALWAYS rewrite pathname reads (this doesn't touch API URLs)
+    pathname_count = content.count('window.location.pathname') + content.count('location.pathname')
+    if pathname_count > 0:
+        print(f"[REWRITE]   Found {pathname_count} pathname references, rewriting...")
+    
     content = re.sub(
         r'\bwindow\.location\.pathname\b',
         f'(window.location.pathname.replace(/^\\/{service}\\//, "/"))',
