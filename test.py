@@ -5,7 +5,7 @@ Run with: python test.py
 """
 
 import unittest
-from views import rewrite_content
+from utils.rewrite import rewrite_content
 
 
 class TestURLRewriting(unittest.TestCase):

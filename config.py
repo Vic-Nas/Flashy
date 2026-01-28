@@ -82,9 +82,6 @@ ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '*').split(',')
 COFFEE_USERNAME = os.environ.get('COFFEE_USERNAME', 'vicnas')
 SHOW_COFFEE = os.environ.get('COFFEE', 'true').lower() == 'true'
 
-# Feature flags
-SHOW_FIXES = os.environ.get('FIXES', 'false').lower() == 'true'
-
 # Logs service - if LOGS=true, adds a /_logs/ service
 ENABLE_LOGS = os.environ.get('LOGS', 'false').lower() == 'true'
 if ENABLE_LOGS:

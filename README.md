@@ -59,7 +59,6 @@ The proxy rewrites URLs so JavaScript apps work transparently:
 | `SECRET_KEY` | `change-me-in-production` | Django secret key |
 | `DEBUG` | `false` | Verbose logs, no caching |
 | `LOGS` | `false` | Enable `/_logs/` endpoint |
-| `FIXES` | `false` | Show changelog on homepage |
 | `COFFEE` | `true` | Show coffee button on errors |
 | `COFFEE_USERNAME` | `vicnas` | Coffee button username |
 
