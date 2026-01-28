@@ -1,5 +1,6 @@
 """Simple configuration - load service mappings from environment."""
 import os
+import glob
 
 # Load service mappings from environment variables
 # Format: SERVICE_name=target.domain.com or SERVICE_name=target.domain.com/base/path
@@ -8,10 +9,35 @@ SERVICES = {}
 SERVICE_BASE_PATHS = {}
 SERVICE_DESCRIPTIONS = {}
 SERVICE_RANKS = {}
+LOCAL_TEMPLATES = {}  # Maps service name to template filename
 
+# Auto-detect local templates
+def load_local_templates():
+    """Scan templates folder for .html files (excluding home, 404, error)."""
+    templates_dir = os.path.join(os.path.dirname(__file__), 'templates')
+    excluded = ['home.html', '404.html', 'error.html']
+    
+    if os.path.exists(templates_dir):
+        for template_file in glob.glob(os.path.join(templates_dir, '*.html')):
+            filename = os.path.basename(template_file)
+            if filename not in excluded:
+                # Extract service name from filename (e.g., about.html -> about)
+                service_name = os.path.splitext(filename)[0]
+                LOCAL_TEMPLATES[service_name] = filename
+
+# Load templates first
+load_local_templates()
+
+# Load environment-based services
 for key, value in os.environ.items():
     if key.startswith('SERVICE_') and not key.endswith('_DESC') and not key.endswith('_RANK'):
         service_name = key.replace('SERVICE_', '')
+        
+        # If this service has an env var, it overrides any local template
+        if service_name in LOCAL_TEMPLATES:
+            print(f"[INFO] SERVICE_{service_name} env var overrides local template {LOCAL_TEMPLATES[service_name]}")
+            del LOCAL_TEMPLATES[service_name]
+        
         # Skip duplicates (take first occurrence)
         if service_name in SERVICES:
             print(f"[WARNING] Duplicate service '{service_name}' ignored (keeping first: {SERVICES[service_name]})")
@@ -40,6 +66,13 @@ for key, value in os.environ.items():
                 SERVICE_RANKS[service_name] = 999
         else:
             SERVICE_RANKS[service_name] = 999
+
+# Add local templates as services with lower priority (rank 1000)
+for service_name, template_file in LOCAL_TEMPLATES.items():
+    SERVICES[service_name] = f'local-template:{template_file}'
+    SERVICE_BASE_PATHS[service_name] = ''
+    SERVICE_RANKS[service_name] = 1000
+    # Description defaults to empty unless there's a comment in the template
 
 SECRET_KEY = os.environ.get('SECRET_KEY', 'change-me-in-production')
 DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'

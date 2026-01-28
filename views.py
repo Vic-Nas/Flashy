@@ -7,8 +7,8 @@ import sys
 import os
 from collections import deque
 from config import (SERVICES, SERVICE_BASE_PATHS, SERVICE_DESCRIPTIONS, 
-SERVICE_RANKS, BLOCKED_SERVICES, DEBUG, COFFEE_USERNAME, SHOW_COFFEE, 
-ENABLE_LOGS, SHOW_FIXES)
+SERVICE_RANKS, LOCAL_TEMPLATES, BLOCKED_SERVICES, DEBUG, COFFEE_USERNAME, 
+SHOW_COFFEE, ENABLE_LOGS, SHOW_FIXES)
 
 # Import version info
 try:
@@ -127,7 +127,14 @@ def home(request):
     services_list = []
     for service, domain in SERVICES.items():
         base_path = SERVICE_BASE_PATHS.get(service, '')
-        full_target = domain + base_path
+        
+        # Check if this is a local template
+        if domain.startswith('local-template:'):
+            template_file = domain.replace('local-template:', '')
+            full_target = template_file
+        else:
+            full_target = domain + base_path
+        
         description = SERVICE_DESCRIPTIONS.get(service, '')
         rank = SERVICE_RANKS.get(service, 999)
         
@@ -245,7 +252,7 @@ def logs_view(request):
 
 @csrf_exempt
 def proxy_view(request, service, path=''):
-    """Main proxy logic - forwards requests to backend services."""
+    """Main proxy logic - forwards requests to backend services or serves local templates."""
     
     # Handle internal logs service
     if service == '_logs' and ENABLE_LOGS:
@@ -260,6 +267,41 @@ def proxy_view(request, service, path=''):
         return service_not_found(service, "Service not configured")
     
     target_domain = SERVICES[service]
+    
+    # Check if this is a local template
+    if target_domain.startswith('local-template:'):
+        template_file = target_domain.replace('local-template:', '')
+        
+        # Local templates only serve the root path
+        if path and path != '/':
+            return HttpResponse("Local templates only available at root path", status=404)
+        
+        # Ensure trailing slash
+        if not request.path.endswith('/'):
+            return HttpResponseRedirect(f'/{service}/')
+        
+        log(f"[LOCAL] Serving template: {template_file}")
+        
+        try:
+            # Render the local template with basic context
+            html = render_template(template_file, {
+                'app_name': app_name,
+                'version': __version__,
+                'service': service,
+            })
+            return HttpResponse(html)
+        except Exception as e:
+            log(f"[ERROR] Failed to render template {template_file}: {e}")
+            return error_page(
+                '❌ Template Error',
+                f'Could not render local template: {template_file}',
+                f'Error: {str(e)}',
+                service=service,
+                target=template_file,
+                status=500
+            )
+    
+    # Continue with normal proxy logic for external services
     base_path = SERVICE_BASE_PATHS.get(service, '')
     
     # Ensure trailing slash for service root

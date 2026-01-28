@@ -37,7 +37,7 @@ The proxy rewrites URLs so JavaScript apps work transparently:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SERVICE_*` | - | Service mappings (e.g., `SERVICE_dev=example.com` or `SERVICE_api=api.example.com/base/path`) |
+| `SERVICE_*` | - | Service mappings (e.g., `SERVICE_dev=example.com/path` or just create template `dev.html`) |
 | `SERVICE_*_DESC` | _(optional)_ | Description for a service (e.g., `SERVICE_dev_DESC=Development site`) |
 | `SERVICE_*_RANK` | `999` | Optional rank for ordering services (e.g., `SERVICE_api_RANK=1`) |
 | `SECRET_KEY` | `change-me-in-production` | Django secret key |
