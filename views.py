@@ -4,7 +4,9 @@ from django.template import loader
 import requests
 import re
 import sys
-from config import SERVICES, BLOCKED_SERVICES, DEBUG, COFFEE_USERNAME, SHOW_COFFEE
+import os
+from collections import deque
+from config import SERVICES, BLOCKED_SERVICES, DEBUG, COFFEE_USERNAME, SHOW_COFFEE, ENABLE_LOGS
 
 # DEBUG mode does aggressive cache busting:
 # - Strips ALL cache headers (ETag, Cache-Control, Expires, Last-Modified, Age, Vary)
@@ -12,11 +14,20 @@ from config import SERVICES, BLOCKED_SERVICES, DEBUG, COFFEE_USERNAME, SHOW_COFF
 # - Logs EVERY request including assets
 # - Forces browser/proxy revalidation on every request
 
+# Simple in-memory log storage (last 1000 lines)
+LOG_BUFFER = deque(maxlen=1000)
+
 
 def log(msg):
-    """Log to stdout immediately."""
+    """Log to stdout immediately and optionally store in buffer."""
     sys.stdout.write(f"{msg}\n")
     sys.stdout.flush()
+    
+    # Store in buffer if logs service is enabled
+    if ENABLE_LOGS:
+        from datetime import datetime
+        timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+        LOG_BUFFER.append(f"[{timestamp}] {msg}")
 
 
 def render_template(template_name, context):
@@ -66,13 +77,108 @@ def error_page(title, message, error_type, service=None, target=None, status=502
 
 def home(request):
     """Show available services on homepage."""
-    html = render_template('home.html', {'services': SERVICES})
+    html = render_template('home.html', {'services': {k: v for k, v in SERVICES.items() if v != 'internal-logs'}})
+    return HttpResponse(html)
+
+
+def logs_view(request):
+    """Show recent logs if LOGS=true."""
+    if not ENABLE_LOGS:
+        return HttpResponse("Logs service not enabled. Set LOGS=true to enable.", status=404)
+    
+    html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Proxy Logs</title>
+  <style>
+    body {
+      font-family: 'Courier New', monospace;
+      background: #1e1e1e;
+      color: #d4d4d4;
+      margin: 0;
+      padding: 20px;
+    }
+    h1 {
+      color: #4ec9b0;
+      font-size: 1.5em;
+    }
+    .log-container {
+      background: #252526;
+      padding: 20px;
+      border-radius: 8px;
+      overflow-x: auto;
+    }
+    .log-line {
+      padding: 4px 0;
+      border-bottom: 1px solid #333;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+    .log-line:hover {
+      background: #2d2d30;
+    }
+    .timestamp {
+      color: #858585;
+    }
+    .proxy { color: #4ec9b0; }
+    .rewrite { color: #dcdcaa; }
+    .error { color: #f48771; }
+    .warning { color: #ce9178; }
+    .refresh {
+      display: inline-block;
+      margin: 10px 0;
+      padding: 8px 16px;
+      background: #0e639c;
+      color: white;
+      text-decoration: none;
+      border-radius: 4px;
+    }
+    .refresh:hover {
+      background: #1177bb;
+    }
+  </style>
+</head>
+<body>
+  <h1>📋 Proxy Logs (Last 1000 lines)</h1>
+  <a href="/_logs/" class="refresh">🔄 Refresh</a>
+  <a href="/" class="refresh">← Home</a>
+  <div class="log-container">
+"""
+    
+    if not LOG_BUFFER:
+        html += '<div class="log-line">No logs yet...</div>'
+    else:
+        for line in LOG_BUFFER:
+            css_class = ""
+            if "[PROXY]" in line:
+                css_class = "proxy"
+            elif "[REWRITE]" in line:
+                css_class = "rewrite"
+            elif "[ERROR]" in line:
+                css_class = "error"
+            elif "[WARNING]" in line:
+                css_class = "warning"
+            
+            html += f'<div class="log-line {css_class}">{line}</div>\n'
+    
+    html += """
+  </div>
+</body>
+</html>
+"""
+    
     return HttpResponse(html)
 
 
 @csrf_exempt
 def proxy_view(request, service, path=''):
     """Main proxy logic - forwards requests to backend services."""
+    
+    # Handle internal logs service
+    if service == '_logs' and ENABLE_LOGS:
+        return logs_view(request)
     
     # Block reserved service names
     if service in BLOCKED_SERVICES:
