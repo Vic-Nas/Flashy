@@ -5,7 +5,7 @@ import re
 import gzip
 import zlib
 import sys
-from config import SERVICES, TARGET_DOMAIN_PATTERN, BLOCKED_SERVICES
+from config import SERVICES, TARGET_DOMAIN_PATTERN, BLOCKED_SERVICES, DEBUG
 
 
 def log(msg):
@@ -196,7 +196,15 @@ def proxy_view(request, service, path=''):
                             value = f'/{service}{path or "/"}'
                         elif value.startswith('/'):
                             value = f'/{service}{value}'
+                # Strip caching headers in DEBUG mode for easier testing
+                elif DEBUG and key.lower() in ['etag', 'cache-control', 'expires', 'last-modified']:
+                    continue
                 response[key] = value
+        
+        # Add no-cache headers in DEBUG mode
+        if DEBUG:
+            response['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+            response['Pragma'] = 'no-cache'
         
         # Handle cookies
         if 'Set-Cookie' in resp.headers:
