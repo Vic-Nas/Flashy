@@ -5,7 +5,14 @@ import re
 import gzip
 import zlib
 import io
+import sys
 from config import SERVICES, TARGET_DOMAIN_PATTERN, BLOCKED_SERVICES
+
+
+def log(msg):
+    """Log to stdout with immediate flush."""
+    sys.stdout.write(f"{msg}\n")
+    sys.stdout.flush()
 
 
 def unknown_service_page(service):
@@ -134,7 +141,7 @@ def proxy_view(request, service, path=''):
     
     # Only log HTML/API requests, not assets
     if not any(path.endswith(ext) for ext in ['.svg', '.ico', '.css', '.js', '.png', '.jpg', '.woff', '.woff2', '.ttf']):
-        print(f"[PROXY] {request.method} /{service}/{path} → {url}")
+        log(f"[PROXY] {request.method} /{service}/{path} → {url}")
     
     try:
         headers = {}
@@ -180,12 +187,12 @@ def proxy_view(request, service, path=''):
             try:
                 content = gzip.decompress(content)
             except Exception as e:
-                print(f"[WARNING] Gzip decompression failed: {e}")
+                log(f"[WARNING] Gzip decompression failed: {e}")
         elif encoding == 'deflate':
             try:
                 content = zlib.decompress(content)
             except Exception as e:
-                print(f"[WARNING] Deflate decompression failed: {e}")
+                log(f"[WARNING] Deflate decompression failed: {e}")
         
         content_type = resp.headers.get('content-type', '')
         
@@ -193,8 +200,8 @@ def proxy_view(request, service, path=''):
         is_text = any(x in content_type.lower() for x in ['text/', 'javascript', 'json'])
         
         if is_text:
-            print(f"[REWRITE] Processing {url}")
-            print(f"[REWRITE]   Content-Type: {content_type}")
+            log(f"[REWRITE] Processing {url}")
+            log(f"[REWRITE]   Content-Type: {content_type}")
             
             text_content = content.decode('utf-8', errors='ignore')
             original_len = len(text_content)
@@ -203,15 +210,15 @@ def proxy_view(request, service, path=''):
             has_pathname = 'window.location.pathname' in text_content or 'location.pathname' in text_content
             has_api = 'api.github.com' in text_content or 'api.' in text_content
             
-            print(f"[REWRITE]   Contains pathname reads: {has_pathname}")
-            print(f"[REWRITE]   Contains API calls: {has_api}")
+            log(f"[REWRITE]   Contains pathname reads: {has_pathname}")
+            log(f"[REWRITE]   Contains API calls: {has_api}")
             
             text_content = rewrite_content(text_content, service)
             
             if len(text_content) != original_len:
-                print(f"[REWRITE]   ✓ Modified ({original_len} → {len(text_content)} bytes)")
+                log(f"[REWRITE]   ✓ Modified ({original_len} → {len(text_content)} bytes)")
             else:
-                print(f"[REWRITE]   No changes made")
+                log(f"[REWRITE]   No changes made")
             
             response = HttpResponse(text_content, status=resp.status_code)
         elif 'javascript' in content_type or 'application/json' in content_type:
@@ -252,7 +259,7 @@ def proxy_view(request, service, path=''):
     except requests.exceptions.ConnectionError:
         return JsonResponse({'error': 'Cannot connect to backend'}, status=502)
     except Exception as e:
-        print(f"[ERROR] {e}")
+        log(f"[ERROR] {e}")
         return JsonResponse({'error': str(e)}, status=502)
 
 
@@ -262,7 +269,7 @@ def rewrite_content(content, service):
     # ALWAYS rewrite pathname reads (this doesn't touch API URLs)
     pathname_count = content.count('window.location.pathname') + content.count('location.pathname')
     if pathname_count > 0:
-        print(f"[REWRITE]   Found {pathname_count} pathname references, rewriting...")
+        log(f"[REWRITE]   Found {pathname_count} pathname references, rewriting...")
     
     content = re.sub(
         r'\bwindow\.location\.pathname\b',
