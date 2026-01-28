@@ -121,7 +121,7 @@
       <ul>
         {% for service in services %}
         <li>
-          <a href="/{{ service.name }}/">{{ service.name }}</a>
+          <a href="/{{ service.name }}/" target="_blank">{{ service.name }}</a>
           <span class="service-target">→ {{ service.target }}</span>
           {% if service.description %}
           <div style="color: #666; font-size: 0.85em; margin-top: 4px;">{{ service.description }}</div>
