@@ -76,6 +76,25 @@ class TestURLRewriting(unittest.TestCase):
         result = rewrite_content(js, 'app', 'example.com')
         self.assertIn('`/app/static/images/', result)
 
+    def test_origin_based_url_construction(self):
+        """window.location.origin + path should be rewritten - THE REAL BUG"""
+        js = 'const url = window.location.origin + "/static/icon.svg";'
+        result = rewrite_content(js, 'mdn', 'developer.mozilla.org')
+        # This should either rewrite origin or the concatenated path
+        self.assertIn('/mdn/static/', result)
+
+    def test_new_url_with_relative_path(self):
+        """new URL(path, window.location.origin) should be handled"""
+        js = 'const url = new URL("/static/icon.svg", window.location.origin);'
+        result = rewrite_content(js, 'mdn', 'developer.mozilla.org')
+        self.assertIn('/mdn/static/', result)
+
+    def test_minified_variable_assignment(self):
+        """Minified code like var s="/static/" should be rewritten - ACTUAL PRODUCTION BUG"""
+        js = 'var s="/static/client/";function getIcon(n){return s+n}'
+        result = rewrite_content(js, 'mdn', 'developer.mozilla.org')
+        self.assertIn('/mdn/static/client/', result)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
