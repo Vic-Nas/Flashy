@@ -82,4 +82,11 @@ def rewrite_content(content, service, target_domain):
         content
     )
     
+    # Rewrite CSS url() - handle both url("/path") and url('/path')
+    content = re.sub(
+        r'(url\s*\()(["\'`]?)(/(?!/)[^"\'`\)>]+)\2(\))',
+        lambda m: f'{m.group(1)}{m.group(2)}/{service}{m.group(3)}{m.group(2)}{m.group(4)}',
+        content
+    )
+    
     return content
