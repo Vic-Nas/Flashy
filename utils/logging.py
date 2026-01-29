@@ -1,4 +1,4 @@
-"""Logging utilities."""
+"""Logging utilities with aggressive deduplication."""
 import sys
 import re
 from collections import deque
@@ -7,81 +7,92 @@ from config import ENABLE_LOGS
 # Simple in-memory log storage (last 1000 lines)
 LOG_BUFFER = deque(maxlen=1000)
 
-# Track recent similar requests for grouping
-_pending_group = None
-_group_count = 0
+# Track asset batches
+_asset_batch = {}  # {service: {filetype: count}}
+_last_log_type = None
 
 
-def _extract_asset_pattern(msg):
-    """Extract service and asset type from proxy log."""
-    # Match: [PROXY] GET /service/path/to/file.hash.ext -> ...
-    match = re.search(r'\[PROXY\] GET /([^/]+)/.*\.([a-z0-9]+)$', msg)
-    if match:
-        service = match.group(1)
-        ext = match.group(2)
-        # Only group common static assets
-        if ext in ['svg', 'css', 'js', 'png', 'jpg', 'woff', 'woff2', 'ttf', 'webp']:
-            return f"{service}:{ext}"
-    return None
-
-
-def _flush_pending_group():
-    """Flush pending grouped logs."""
-    global _pending_group, _group_count
+def _get_asset_info(msg):
+    """Extract service and file type from log message."""
+    # Match [PROXY] logs
+    proxy_match = re.search(r'\[PROXY\] GET /([^/]+)/.*\.([a-z0-9]+)\s', msg)
+    if proxy_match:
+        return 'proxy', proxy_match.group(1), proxy_match.group(2)
     
-    if _pending_group and _group_count > 0:
-        if _group_count == 1:
-            # Just log the single message (already logged)
-            pass
-        else:
-            # Log summary
-            service, ext = _pending_group.split(':')
-            summary = f"[PROXY] ... +{_group_count - 1} more {ext} files for /{service}/"
-            sys.stdout.write(f"{summary}\n")
-            sys.stdout.flush()
-            
-            if ENABLE_LOGS:
-                from datetime import datetime
-                timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
-                LOG_BUFFER.append(f"[{timestamp}] {summary}")
+    # Match [REWRITE] logs for assets
+    if '[REWRITE] Processing' in msg:
+        rewrite_match = re.search(r'https://[^/]+/.*\.([a-z0-9]+)$', msg)
+        if rewrite_match:
+            service_match = re.search(r'\[PROXY\] GET /([^/]+)/', _last_log_type or '')
+            service = service_match.group(1) if service_match else 'unknown'
+            return 'rewrite', service, rewrite_match.group(1)
     
-    _pending_group = None
-    _group_count = 0
+    return None, None, None
+
+
+def _is_asset_detail(msg):
+    """Check if this is a REWRITE detail line we should suppress."""
+    suppressable = [
+        '[REWRITE]   Content-Type:',
+        '[REWRITE]   Contains pathname reads:',
+        '[REWRITE]   Contains API calls:',
+        '[REWRITE]   No changes made',
+        '[REWRITE]   ✓ Modified'
+    ]
+    return any(s in msg for s in suppressable)
+
+
+def _flush_batch():
+    """Flush accumulated asset batches."""
+    global _asset_batch
+    
+    if not _asset_batch:
+        return
+    
+    for service, types in _asset_batch.items():
+        for filetype, count in types.items():
+            if count > 1:
+                summary = f"[ASSETS] {service}: {count}x {filetype}"
+                sys.stdout.write(f"{summary}\n")
+                sys.stdout.flush()
+                
+                if ENABLE_LOGS:
+                    from datetime import datetime
+                    timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+                    LOG_BUFFER.append(f"[{timestamp}] {summary}")
+    
+    _asset_batch.clear()
 
 
 def log(msg):
-    """Log to stdout with smart grouping for similar static asset requests."""
-    global _pending_group, _group_count
+    """Log with aggressive asset deduplication."""
+    global _last_log_type, _asset_batch
     
-    pattern = _extract_asset_pattern(msg)
-    
-    # If this is a groupable asset request
-    if pattern:
-        # Same pattern as pending group - increment count
-        if pattern == _pending_group:
-            _group_count += 1
-            return
-        
-        # Different pattern - flush previous group and start new one
-        _flush_pending_group()
-        _pending_group = pattern
-        _group_count = 1
-        
-        # Log first message of group
-        sys.stdout.write(f"{msg}\n")
-        sys.stdout.flush()
-        
-        if ENABLE_LOGS:
-            from datetime import datetime
-            timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
-            LOG_BUFFER.append(f"[{timestamp}] {msg}")
-        
+    # Suppress REWRITE detail lines entirely
+    if _is_asset_detail(msg):
         return
     
-    # Not a groupable message - flush any pending group
-    _flush_pending_group()
+    log_type, service, filetype = _get_asset_info(msg)
     
-    # Log normally
+    # Asset extensions to group
+    asset_types = ['svg', 'css', 'js', 'woff', 'woff2', 'ttf', 'png', 'jpg', 'webp', 'ico']
+    
+    # If this is an asset log
+    if log_type and filetype in asset_types:
+        # Track it
+        if service not in _asset_batch:
+            _asset_batch[service] = {}
+        if filetype not in _asset_batch[service]:
+            _asset_batch[service][filetype] = 0
+        _asset_batch[service][filetype] += 1
+        
+        _last_log_type = msg
+        return
+    
+    # Not an asset - flush batch and log normally
+    _flush_batch()
+    _last_log_type = msg
+    
     sys.stdout.write(f"{msg}\n")
     sys.stdout.flush()
     
@@ -93,5 +104,5 @@ def log(msg):
 
 def get_log_buffer():
     """Get the log buffer for display."""
-    _flush_pending_group()  # Ensure any pending groups are flushed
+    _flush_batch()
     return LOG_BUFFER
