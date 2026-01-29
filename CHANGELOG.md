@@ -1,5 +1,5 @@
 # Changelog
 
-### Updated
+### Removed
 
-- Smart log deduplication
+- robots.txt not found error in lods
