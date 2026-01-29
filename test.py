@@ -92,6 +92,12 @@ class TestURLRewriting(unittest.TestCase):
         svg = '<use href="/static/sprite.svg#icon"></use>'
         result = rewrite_content(svg, 'club', 'example.com')
         self.assertIn('href="/club/static/sprite.svg#icon"', result)
+    
+    def test_get_attribute_href_stripped(self):
+        """JavaScript getAttribute('href') should strip service prefix for comparisons"""
+        js = 'link.getAttribute("href")'
+        result = rewrite_content(js, 'club', 'example.com')
+        self.assertIn('getAttribute("href")?.replace(/^\\/club\\//, "/")', result)
 
 
 if __name__ == '__main__':
