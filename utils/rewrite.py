@@ -89,4 +89,16 @@ def rewrite_content(content, service, target_domain):
         content
     )
     
+    # Rewrite getAttribute('href') to strip the service prefix
+    # This makes comparisons like: if (link.getAttribute('href') === currentPath) work
+    def rewrite_get_attribute(match):
+        quote = match.group(1)
+        return f'getAttribute({quote}href{quote})?.replace(/^\\/{service}\\//, "/")'
+    
+    content = re.sub(
+        r'\bgetAttribute\s*\(\s*(["\'`])href\1\s*\)',
+        rewrite_get_attribute,
+        content
+    )
+    
     return content
