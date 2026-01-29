@@ -5,6 +5,10 @@ Run with: python test.py
 """
 
 import unittest
+import sys
+import os
+sys.path.insert(0, os.path.dirname(__file__))
+
 from utils.rewrite import rewrite_content
 
 
@@ -59,6 +63,18 @@ class TestURLRewriting(unittest.TestCase):
         html = '<script src="//cdn.jsdelivr.net/lib.js"></script>'
         result = rewrite_content(html, 'app', 'example.com')
         self.assertEqual(html, result)
+
+    def test_javascript_path_variables(self):
+        """JavaScript variables holding paths should get prefixed - THIS IS THE BUG"""
+        js = 'const iconPath = "/static/client/icon.svg";'
+        result = rewrite_content(js, 'mdn', 'developer.mozilla.org')
+        self.assertIn('"/mdn/static/client/icon.svg"', result)
+
+    def test_template_string_paths(self):
+        """Template strings with paths should get prefixed"""
+        js = 'const url = `/static/images/${filename}`;'
+        result = rewrite_content(js, 'app', 'example.com')
+        self.assertIn('`/app/static/images/', result)
 
 
 if __name__ == '__main__':
