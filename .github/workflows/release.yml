@@ -2,11 +2,11 @@ name: Release
 
 on:
   push:
-    branches: 
-      - main
-    paths-ignore:
-      - 'CHANGELOG.md'
-      - 'README.md'
+    branches: [ main ]
+    tags:
+      - 'v*'
+    paths:
+      - '!**.md'
 
 jobs:
   test:
@@ -42,6 +42,7 @@ jobs:
   release:
     needs: test
     runs-on: ubuntu-latest
+    if: success()
     
     permissions:
       contents: write
