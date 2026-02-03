@@ -42,7 +42,6 @@ jobs:
   release:
     needs: test
     runs-on: ubuntu-latest
-    if: success()
     
     permissions:
       contents: write
