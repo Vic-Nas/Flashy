@@ -31,7 +31,9 @@ load_local_templates()
 
 # Load environment-based services
 for key, value in os.environ.items():
-    if key.startswith('SERVICE_') and not key.endswith('_DESC') and not key.endswith('_RANK'):
+    # Only treat plain SERVICE_<name> keys as service mappings.
+    # Ignore SERVICE_<name>_DESC, SERVICE_<name>_RANK, SERVICE_<name>_HIDE flags.
+    if key.startswith('SERVICE_') and not key.upper().endswith('_DESC') and not key.upper().endswith('_RANK') and not key.upper().endswith('_HIDE'):
         service_name = key.replace('SERVICE_', '')
         
         # If this service has an env var, it overrides any local template
